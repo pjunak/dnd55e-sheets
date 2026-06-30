@@ -101,7 +101,6 @@ export default {
   'backpack.addWeapon':  '＋ Weapon…',
   'backpack.addArmor':   '＋ Armor…',
   'backpack.attune':     'Toggle attunement (magic items)',
-  'backpack.attuned':    'Attuned',
   'backpack.attunement': 'Attuned {n}/{limit}',
   'combat.mastery':      'Weapon mastery property',
   'combat.notProficient': 'Not proficient with this weapon',
@@ -127,8 +126,6 @@ export default {
   'spell.slotN':         'L{lvl}',
   'spell.cantripsN':     'Cantrips {n}/{known}',
   'spell.preparedN':     'Prepared {n}/{limit}',
-  'spell.cantripPh':     '＋ Learn cantrip…',
-  'spell.preparePh':     '＋ Prepare spell…',
   'spell.available':     'Available — drag into a slot (or click)',
   'spell.dragHint':      'Drag into a slot above, or click to add',
   'spell.emptySlot':     'drop here',
@@ -169,12 +166,18 @@ export default {
   'builder.asiAbility':  'Ability +2…',
   'builder.progression': 'Progression',
 
+  // ── Overrides (engine mode — a manual value that beats the computed one) ──
+  'override.edit':    'Set a manual value (overrides the computed one)',
+  'override.auto':    'Clear override — back to auto',
+  'override.diverge': 'manual {manual} · auto {auto}',
+
   // ── Actions / misc ───────────────────────────────────────────────
   'action.hpMinus':   'Lose 1 HP',
   'action.hpPlus':    'Heal 1 HP',
   'action.remove':    'Remove',
   'misc.notSet':      '—',
   'misc.unnamed':     '(unnamed)',
+  'misc.unknown':     '(unknown)',
   'misc.proficient':  'Proficient',
   'misc.expertise':   'Expertise',
 

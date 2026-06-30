@@ -1,0 +1,12 @@
+# ── Dependencies ───────────────────────────────────────────────
+node_modules/
+
+# ── Claude Code local config ───────────────────────────────────
+.claude/
+
+# ── OS / editor noise ──────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/

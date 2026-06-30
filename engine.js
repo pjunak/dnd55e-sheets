@@ -1,0 +1,218 @@
+// ═══════════════════════════════════════════════════════════════
+//  engine.js — the decision/derivation pipeline (engine-mode brains).
+//
+//  Builds the Builder's working model from the stored sheet, collects + resolves
+//  the choice descriptors, hydrates the optional rules engine (error-isolated),
+//  materializes the DEG-1 fallback, and exposes the single `viewModel` the read
+//  tabs consume (computed-when-present, hand-filled otherwise; a stored override
+//  always wins — ARCH-3). Also owns `mutate` / `builderMutate` (persist + re-render
+//  through patchAddonData → this NS only).
+//
+//  `makeEngine(ctx)` binds host + the shared helpers/constants; every function is
+//  pure-ish (no module-level state) except the two mutators.
+// ═══════════════════════════════════════════════════════════════
+
+export function makeEngine(ctx) {
+  const { host, NS, ABILITIES, SKILLS, num, abilityMod, sheetOf } = ctx;
+
+  /** Normalize a stored sheet into the Builder's working model, deriving the
+   *  rich shape from the flat fields on first use (MC-1 migration). `engine` is
+   *  used to resolve a free-text className → a compendium class id. Returns
+   *  { classes, baseStats } — does NOT mutate; the actions persist edits. */
+  const builderModel = (s, engine) => {
+    const baseStats = (s.baseStats && Object.keys(s.baseStats).length)
+      ? { ...s.baseStats }
+      : { ...s.abilities };               // first Builder open: current scores become the base
+    let classes = Array.isArray(s.classes) && s.classes.length ? s.classes.map((c) => ({ ...c })) : null;
+    if (!classes) {
+      const cid = s.className && engine && engine.getItemByName ? (engine.getItemByName('class', s.className) || {}).id : '';
+      classes = s.className
+        ? [{ classId: cid || '', level: Math.max(1, num(s.level, 1)), subclass: s.subclass || '' }]
+        : [{ classId: '', level: 1, subclass: '' }];
+    }
+    return { baseStats, classes };
+  };
+
+  /** The choice descriptors for a build — the SINGLE source used by BOTH the
+   *  Builder UI (to render pickers) and resolveChoices (to apply resolutions),
+   *  so the two never drift. Background ASI is handled separately (its split UI).
+   *  kind ∈ skills | expertise | weaponMastery | feat | enumerated | asiMode. */
+  const collectChoices = (classes, engine) => {
+    const out = [];
+    for (const cl of classes) {
+      const rec = cl.classId ? engine.getItem('class', cl.classId) : null;
+      if (!rec) continue;
+      const clvl = num(cl.level, 1);
+      const sk = rec.startingProficiencies && rec.startingProficiencies.skills;
+      if (sk && sk.choose) out.push({ id: 'skills:' + cl.classId, kind: 'skills', count: num(sk.choose, 1), from: sk.from || [], source: { type: 'class', id: cl.classId, level: 1 } });
+      for (const ch of (rec.grants && rec.grants.choices) || []) {
+        const srcLevel = num(String(ch.source || '').split(':')[1], 1);
+        if (srcLevel > clvl) continue;
+        let kind = 'enumerated';
+        if (ch.type === 'expertise') kind = 'expertise';
+        else if (ch.type === 'weaponMastery') kind = 'weaponMastery';
+        else if (!Array.isArray(ch.from) && (ch.type === 'feat' || ch.category)) kind = 'feat';
+        out.push({ id: ch.id, kind, count: num(ch.count, 1), from: ch.from, category: ch.category, prompt: ch.prompt, source: { type: 'class', id: cl.classId, level: srcLevel } });
+      }
+      for (const lvl of [4, 8, 12, 16, 19]) if (lvl <= clvl) out.push({ id: 'asi:' + cl.classId + ':' + lvl, kind: 'asiMode', classId: cl.classId, level: lvl, source: { type: 'class', id: cl.classId, level: lvl } });
+    }
+    return out;
+  };
+
+  /** Map featureChoices resolutions → the canonical input fields the engine
+   *  reads (skill proficiencies, expertise, feats, weapon-mastery picks). The
+   *  background ASI is already an abilityGrant; ASI-level "+2" picks too. */
+  const resolveChoices = (s, classes, engine) => {
+    const fc = s.featureChoices || {};
+    const skillProficiencies = [], feats = [], weaponMasteryChoices = [];
+    const skillExpertise = {};
+    const valsOf = (ch) => {
+      if (num(ch.count, 1) > 1) { const a = []; for (let i = 0; i < ch.count; i++) { const v = fc[ch.id + '#' + i]; if (v) a.push(v); } return a; }
+      const v = fc[ch.id]; return v ? [v] : [];
+    };
+    const bgRec = s.background ? (engine.getItemByName('background', s.background) || engine.getItem('background', s.background)) : null;
+    if (bgRec && bgRec.originFeat) feats.push(bgRec.originFeat);
+    for (const ch of collectChoices(classes, engine)) {
+      const vals = valsOf(ch);
+      if (ch.kind === 'skills') skillProficiencies.push(...vals);
+      else if (ch.kind === 'expertise') vals.forEach((v) => { skillExpertise[v] = true; });
+      else if (ch.kind === 'weaponMastery') weaponMasteryChoices.push(...vals);
+      else if (ch.kind === 'feat') feats.push(...vals);
+      else if (ch.kind === 'asiMode') { if (fc[ch.id] === 'feat' && fc[ch.id + ':feat']) feats.push(fc[ch.id + ':feat']); }
+    }
+    return { skillProficiencies, skillExpertise, feats: feats.map((f) => ({ featId: f })), weaponMasteryChoices };
+  };
+
+  /** The decisions object the engine hydrates: the Builder's rich model + the
+   *  resolved choices, merged over the stored sheet (so the engine sees
+   *  classes[]/baseStats/grants AND the applied skill/expertise/feat picks). */
+  const decisionsOf = (s, engine) => {
+    const m = builderModel(s, engine);
+    const resolved = engine ? resolveChoices(s, m.classes, engine) : {};
+    return { ...s, classes: m.classes, baseStats: m.baseStats, ...resolved };
+  };
+
+  /** Run the rules engine over the stored decisions (error-isolated). Returns
+   *  the engine result { sheet, warnings } or null in standalone / on failure —
+   *  so a broken engine never breaks the sheet (ARCH-4/ARCH-5). */
+  const safeHydrate = (engine, s) => {
+    try { const r = engine && engine.hydrate && engine.hydrate(s); return (r && r.sheet) ? r : null; }
+    catch (_) { return null; }
+  };
+
+  /** DEG-1: write the engine-computed sheet INTO the flat fallback fields, so
+   *  removing the engine later degrades to this last-computed snapshot (a
+   *  fully-functional hand-filled sheet) rather than blank/broken. Mutates `s`. */
+  const materializeInto = (s, engine) => {
+    const r = safeHydrate(engine, decisionsOf(s, engine));
+    if (!r || !r.sheet) return;
+    const cs = r.sheet, d = cs.derived || {};
+    const m = builderModel(s, engine);
+    const first = m.classes[0] || {};
+    const firstRec = first.classId ? engine.getItem('class', first.classId) : null;
+    s.className = firstRec ? firstRec.name : s.className;
+    s.subclass = first.subclass || '';
+    s.level = num(cs.totalLevel, num(s.level, 1));
+    for (const a of ABILITIES) if (cs.abilities && cs.abilities[a]) s.abilities[a] = num(cs.abilities[a].score, num(s.abilities[a], 10));
+    s.maxHp = num(d.maxHp, s.maxHp);
+    s.hp = ctx.clampHp(num(s.hp, 0), s.maxHp);
+    s.ac = num(d.armorClass, s.ac);
+    s.initiative = num(d.initiative, s.initiative);
+    s.speed = num(d.speed, s.speed);
+    s.profBonus = num(d.proficiencyBonus, s.profBonus);
+    s.saveProf = {};
+    for (const a of ABILITIES) s.saveProf[a] = !!(cs.saves && cs.saves[a] && cs.saves[a].proficient);
+    s.skillProf = {};
+    for (const id of Object.keys(cs.skills || {})) s.skillProf[id] = !!cs.skills[id].proficient;
+  };
+
+  /** Soft-probe the rules engine. Lazily, per render, try/caught — so installing
+   *  or removing core-rules never breaks the sheet (ARCH-4). core-rules is a
+   *  manifest `optionalDependencies` entry: the host permits host.use() for it
+   *  and load-orders it before us WHEN present, but never blocks us when it's
+   *  absent (then use() throws → null → standalone). So the Builder tab appears
+   *  only once core-rules is installed and provides an apiVersion≥1 API. */
+  const getRules = () => {
+    try {
+      const r = host.use && host.use('dnd55e-core-rules');
+      return (r && r.apiVersion >= 1) ? r : null;
+    } catch (_) { return null; }
+  };
+
+  /** One value source for the read tabs: computed values from the engine when
+   *  present (ARCH-1 — derive, don't store), else the hand-filled flat fields. A
+   *  stored override always wins (ARCH-3). The `auto` flag drives the badge.
+   *  Passive perception routes through the resolved Perception skill total so
+   *  expertise is reflected and the formula lives in exactly one place. */
+  const viewModel = (s, comp) => {
+    const flatPb = num(s.profBonus, 0);
+    const ov = s.overrides || {};
+    if (comp) {
+      const d = comp.derived || {};
+      const pick = (field, computed) => (ov[field] != null ? num(ov[field]) : num(computed));
+      const vm = {
+        auto: true,
+        overridden: (f) => ov[f] != null,
+        autoVal: { maxHp: num(d.maxHp), ac: num(d.armorClass), init: num(d.initiative), speed: num(d.speed) },
+        pb: num(d.proficiencyBonus, flatPb),
+        maxHp: pick('maxHp', d.maxHp),
+        ac: pick('ac', d.armorClass),
+        init: pick('initiative', d.initiative),
+        speed: pick('speed', d.speed),
+        save: (a) => { const x = (comp.saves && comp.saves[a]) || {}; return { prof: !!x.proficient, exp: false, total: num(x.total, abilityMod(s.abilities[a])) }; },
+        skill: (id, ab) => { const x = (comp.skills && comp.skills[id]) || {}; return { prof: !!x.proficient, exp: !!x.expertise, total: num(x.total, abilityMod(s.abilities[ab])) }; },
+      };
+      // Passive perception = 10 + the resolved Perception skill total (engine
+      // value preferred; recomputed from the same skill() resolver otherwise).
+      const perc = vm.skill('perception', 'WIS');
+      vm.passivePerc = (comp.derived && comp.derived.passivePerception != null)
+        ? num(comp.derived.passivePerception, 10 + perc.total)
+        : 10 + perc.total;
+      return vm;
+    }
+    const vm = {
+      auto: false,
+      overridden: () => false,
+      autoVal: {},
+      pb: flatPb,
+      maxHp: num(s.maxHp, 0),
+      ac: num(s.ac, 10),
+      init: num(s.initiative, 0),
+      speed: num(s.speed, 30),
+      save: (a) => { const prof = !!s.saveProf[a]; return { prof, exp: false, total: abilityMod(s.abilities[a]) + (prof ? flatPb : 0) }; },
+      skill: (id, ab) => { const prof = !!s.skillProf[id]; return { prof, exp: false, total: abilityMod(s.abilities[ab]) + (prof ? flatPb : 0) }; },
+    };
+    // Same one-formula route in standalone: 10 + Perception skill total.
+    vm.passivePerc = 10 + vm.skill('perception', 'WIS').total;
+    return vm;
+  };
+
+  // ── Mutators (route through patchAddonData → this NS only) ────────
+  const mutate = (cid, fn) => {
+    host.store.patchAddonData('characters', cid, (raw) => {
+      const s = sheetOf({ addonData: { [NS]: raw } });
+      const out = fn(s) || s;
+      return out;
+    });
+    host.ui.rerender();
+  };
+
+  /** Builder mutation: seed the rich model (migration) if needed, apply `fn`,
+   *  then materialize the DEG-1 fallback. Persists + re-renders via `mutate`. */
+  const builderMutate = (cid, fn) => {
+    const engine = getRules();
+    mutate(cid, (s) => {
+      const m = builderModel(s, engine);
+      if (!Array.isArray(s.classes) || !s.classes.length) s.classes = m.classes;
+      if (!s.baseStats || !Object.keys(s.baseStats).length) s.baseStats = m.baseStats;
+      fn(s, engine);
+      if (engine) materializeInto(s, engine);
+      return s;
+    });
+  };
+
+  return {
+    builderModel, collectChoices, resolveChoices, decisionsOf,
+    safeHydrate, materializeInto, getRules, viewModel, mutate, builderMutate,
+  };
+}
