@@ -9,10 +9,23 @@
 export default {
   // ── Tabs ─────────────────────────────────────────────────────────
   'tab.overview':     'Overview',
-  'tab.sheet':        'Sheet',
+  'tab.sheet':        'Combat',
   'tab.spellbook':    'Spellbook',
   'tab.backpack':     'Backpack',
   'tab.builder':      'Builder',
+  'tab.overviewHint': 'Abilities, saves & skills',
+  'tab.sheetHint':    'Attacks & defenses',
+  'tab.spellbookHint':'Prepared spells & slots',
+  'tab.backpackHint': 'Inventory & currency',
+  'tab.builderHint':  'Class, levels & choices',
+
+  // ── Modification mode ────────────────────────────────────────────
+  'mode.edit':        'Edit',
+  'mode.done':        'Done',
+  'mode.editing':     'Editing',
+  'mode.editTitle':   'Enter modification mode — change abilities, equipment and choices',
+  'mode.doneTitle':   'Leave modification mode — back to play view',
+  'mode.builderHint': 'The Builder is open below — set class, levels, species and choices there.',
 
   // ── Section headers ──────────────────────────────────────────────
   'sheet.title':      'Character Sheet',
@@ -45,12 +58,26 @@ export default {
   'field.notes':      'Notes (Markdown)',
 
   // ── Compact stat labels (read view) ──────────────────────────────
-  'stat.hp':          'HP',
+  'stat.hp':          'Hit Points',
   'stat.ac':          'AC',
-  'stat.init':        'Init',
+  'stat.init':        'Initiative',
   'stat.speed':       'Speed',
-  'stat.pb':          'PB',
+  'stat.pb':          'Proficiency',
   'stat.passivePerc': 'Passive Perception',
+  'stat.passivePercAbbr': 'Pass. Perc.',
+  'stat.temp':        'Temp',
+
+  // ── Header / sections ────────────────────────────────────────────
+  'header.details':   'Details',
+  'header.noClass':   'Unnamed adventurer',
+  'sheet.savesShort': 'Saves',
+  'sheet.notesEmpty': 'No notes yet.',
+  'combat.title':     'Attacks',
+  'combat.defenses':  'Defenses',
+  'combat.noWeapons': 'No weapons readied. Add weapons in the Backpack and mark them Equipped or Ready to see attacks here.',
+  'combat.weaponsHint': 'Equipped & readied weapons.',
+  'combat.acSource':  'Armor Class',
+  'combat.attunement': 'Attunement',
 
   // ── Ability full names (abbreviations STR/DEX/… are universal) ────
   'ability.STR':      'Strength',
@@ -143,7 +170,7 @@ export default {
 
   // ── Builder (rules-engine guided progression — appears when installed) ──
   'builder.soon':        'The guided Builder appears here when the rules engine and compendium addons are installed.',
-  'builder.editHere':    'This character uses the rules engine. Edit it in the 🛠️ Builder tab — abilities, class & levels, and choices all live there, and the sheet auto-calculates.',
+  'builder.editHere':    'This character uses the rules engine. On the sheet, press ✎ Edit to enter modification mode, then open the 🛠️ Builder tab — abilities, class & levels, and choices all live there, and the sheet auto-calculates.',
   'builder.totalLevel':  'Total Level',
   'builder.abilities':   'Ability Scores',
   'builder.baseHint':    'Enter base scores; the engine adds background / feat increases (capped at 20).',
@@ -179,6 +206,7 @@ export default {
   'misc.unnamed':     '(unnamed)',
   'misc.unknown':     '(unknown)',
   'misc.proficient':  'Proficient',
+  'misc.notProficient': 'Not proficient',
   'misc.expertise':   'Expertise',
 
   // ── Settings / help ──────────────────────────────────────────────

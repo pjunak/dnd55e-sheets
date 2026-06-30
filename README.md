@@ -7,18 +7,28 @@ framework). Addon id: `dnd55e-sheets`.
 The sheet renders on every character page and stores its data per character in
 `character.addonData['dnd55e-sheets']` — it does **not** own a collection.
 
-## What it does (M1)
+## What it does
 
-- **Article section** on each character page: identity summary, ability scores with
-  modifiers, combat block with live **HP +/-**, saving throws and skills with proficiency
-  totals, passive perception, and Markdown notes.
-- **Editor fields** on the character editor: a full decision form — identity (class,
-  subclass, species, background, alignment, player, level), the six ability scores, combat
-  numbers (Max/Current/Temp HP, AC, initiative, speed, proficiency bonus), save & skill
-  proficiency toggles, and notes.
-- **Settings tab**: a small info panel.
+Each character page gets a tabbed character sheet with a **persistent header** —
+identity line plus the vital stat strip (HP with live **+/-**, AC, Initiative, Speed,
+Proficiency, Passive Perception) that stays visible on every tab — over these tabs:
 
-Everything is entered by hand. The only math done here is universal D&D arithmetic that
+- **Overview** — ability scores, saving throws, skills and notes (the stat block).
+- **Combat** — attacks from equipped/ready weapons + defenses.
+- **Spellbook** — prepared/cantrip slots, granted & choose-grant sections, extras
+  (shown only when the character has spells).
+- **Backpack** — inventory grouped by carry location + currency.
+- **Builder** — guided progression; appears only with the rules engine **and** in
+  modification mode.
+
+**Modification mode** is the play ↔ edit toggle (the **✎ Edit** button in the header).
+*View* is the default: a clean, read-only sheet — the one live-play exception is HP +/-.
+*Edit* reveals the building affordances: hand-editable tiles/rows (standalone) or the
+Builder tab and stat overrides (engine), plus the spell/inventory editors. Anonymous
+viewers never see it. There is also a consolidated **Editor** form on the character
+editor overlay for bulk entry, and a small **Settings** info panel.
+
+Everything can be entered by hand. The only math done here is universal D&D arithmetic that
 holds regardless of content — ability modifiers `⌊(score−10)/2⌋` and proficiency totals
 (`mod + PB` when proficient). It has **no dependencies** and works entirely standalone.
 

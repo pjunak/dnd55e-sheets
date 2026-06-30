@@ -11,6 +11,17 @@ import assert from 'node:assert/strict';
 import { dryRunRegister, smokeRegistrations, createMockHost } from '../../ttrpg-codex/web/js/addon-test-harness.mjs';
 import register from '../entry.js';
 
+// localStorage mock — force the active tab AND (optionally) modification mode, so
+// the edit-only surfaces (the Builder tab, the spell pool, the add pickers) render
+// under test. The sheet keys these per character: 'dse-tab:<cid>' / 'dse-mode:<cid>'.
+function mockLocalStorage(tab, mode) {
+  globalThis.localStorage = {
+    getItem: (k) => (String(k).startsWith('dse-mode:') ? (mode || null) : (tab || null)),
+    setItem() {}, removeItem() {},
+  };
+}
+function clearLocalStorage() { delete globalThis.localStorage; }
+
 const META = {
   id: 'dnd55e-sheets',
   permissions: [
@@ -67,13 +78,27 @@ test('sheets: article section renders with populated addonData', () => {
   assert.doesNotMatch(out.html, /Builder/, 'no Builder tab in standalone (no engine)');
 });
 
-test('sheets: shows engine-computed values + Builder tab when core-rules is present', () => {
-  const { rec } = dryRunRegister(register, META, { deps: { 'dnd55e-core-rules': FAKE_ENGINE } });
-  const section = rec.articleSections.find(s => s.kind === 'characters');
-  const out = section.fn({ id: 'c9', name: 'Mage', addonData: { 'dnd55e-sheets': { className: 'Wizard', hp: 40, abilities: { CON: 14 } } } });
-  assert.match(out.html, /Builder/, 'Builder tab appears with the engine');
-  assert.match(out.html, /99/, 'overview at-a-glance shows the engine max HP (99)');
-  assert.match(out.html, /17/, 'overview at-a-glance shows the engine AC (17)');
+test('sheets: shows engine-computed values + Builder tab (modification mode)', () => {
+  mockLocalStorage(null, 'edit');   // default tab (overview) + modification mode
+  try {
+    const { rec } = dryRunRegister(register, META, { deps: { 'dnd55e-core-rules': FAKE_ENGINE } });
+    const section = rec.articleSections.find(s => s.kind === 'characters');
+    const out = section.fn({ id: 'c9', name: 'Mage', addonData: { 'dnd55e-sheets': { className: 'Wizard', hp: 40, abilities: { CON: 14 } } } });
+    assert.match(out.html, /Builder/, 'Builder tab appears with the engine in modification mode');
+    assert.match(out.html, /99/, 'header vital strip shows the engine max HP (99)');
+    assert.match(out.html, /17/, 'header vital strip shows the engine AC (17)');
+  } finally { clearLocalStorage(); }
+});
+
+test('sheets: Builder tab is hidden in view mode (engine present, not modifying)', () => {
+  mockLocalStorage(null, null);   // default tab, view mode (no modification)
+  try {
+    const { rec } = dryRunRegister(register, META, { deps: { 'dnd55e-core-rules': FAKE_ENGINE } });
+    const section = rec.articleSections.find(s => s.kind === 'characters');
+    const out = section.fn({ id: 'c9b', name: 'Mage', addonData: { 'dnd55e-sheets': { className: 'Wizard' } } });
+    assert.doesNotMatch(out.html, /Builder/, 'no Builder tab until you enter modification mode');
+    assert.match(out.html, /✎ Edit/, 'the Edit (modification-mode) toggle is offered');
+  } finally { clearLocalStorage(); }
 });
 
 // A fuller fake engine (data API + hydrate) for the Builder + Spellbook.
@@ -123,7 +148,7 @@ const RICH_ENGINE = {
 };
 
 test('sheets: Builder tab renders the guided form when the engine is present', () => {
-  globalThis.localStorage = { getItem: () => 'builder', setItem() {} };   // force the Builder tab
+  mockLocalStorage('builder', 'edit');   // force the Builder tab (edit-only)
   try {
     const { rec } = dryRunRegister(register, META, { deps: { 'dnd55e-core-rules': RICH_ENGINE } });
     const section = rec.articleSections.find(s => s.kind === 'characters');
@@ -131,7 +156,7 @@ test('sheets: Builder tab renders the guided form when the engine is present', (
     assert.match(out.html, /Ability Scores|Class & Levels|Progression/, 'shows Builder sections');
     assert.match(out.html, /Wizard/, 'class dropdown / resolved class');
     assert.match(out.html, /<select/, 'renders dropdowns');
-  } finally { delete globalThis.localStorage; }
+  } finally { clearLocalStorage(); }
 });
 
 test('sheets: Builder choices resolve into engine inputs (skill prof + expertise)', () => {
@@ -206,7 +231,7 @@ test('sheets: a half-feat chosen at an ASI level applies its ability bump (AB-2)
 });
 
 test('sheets: Spellbook separates granted from picks + colours forced duplicates', () => {
-  globalThis.localStorage = { getItem: () => 'spellbook', setItem() {} };   // force the Spellbook tab
+  mockLocalStorage('spellbook', 'edit');   // force the Spellbook tab + modification mode
   try {
     const { rec } = dryRunRegister(register, META, { deps: { 'dnd55e-core-rules': RICH_ENGINE } });
     const section = rec.articleSections.find(s => s.kind === 'characters');
@@ -225,11 +250,11 @@ test('sheets: Spellbook separates granted from picks + colours forced duplicates
     assert.match(out.html, /Mage Armor/, 'available (undrafted) spell in the pool');
     assert.match(out.html, /draggable="true"/, 'draggable spell cards');
     assert.match(out.html, /data-on-drop=/, 'drop zones for preparation');
-  } finally { delete globalThis.localStorage; }
+  } finally { clearLocalStorage(); }
 });
 
 test('sheets: choose-grant picker renders a filtered pool + pick/unpick actions', () => {
-  globalThis.localStorage = { getItem: () => 'spellbook', setItem() {} };
+  mockLocalStorage('spellbook', 'edit');
   try {
     const { rec } = dryRunRegister(register, META, { deps: { 'dnd55e-core-rules': RICH_ENGINE } });
     const section = rec.articleSections.find((s) => s.kind === 'characters');
@@ -238,7 +263,7 @@ test('sheets: choose-grant picker renders a filtered pool + pick/unpick actions'
     assert.match(out.html, /Magic Initiate/, 'shows the grant source + count');
     assert.match(out.html, /<option value="fire-bolt">/, 'picker offers the matching level-0 wizard cantrip');
     assert.doesNotMatch(out.html, /<option value="fireball"/, 'a non-matching (level-3) spell is NOT an option in the cantrip picker');
-  } finally { delete globalThis.localStorage; }
+  } finally { clearLocalStorage(); }
   const { rec } = dryRunRegister(register, META, { deps: { 'dnd55e-core-rules': RICH_ENGINE } });
   const act = (name, ...args) => rec.actions.find((a) => a.name === name).fn(...args);
   assert.doesNotThrow(() => act('grantPick', 'c1', 'feat:magic-initiate:mi-cantrips', 'fire-bolt'));
@@ -260,7 +285,7 @@ test('sheets: spellbook prepare/cantrip/copy + drag-drop actions do not throw', 
 });
 
 test('sheets: Sheet tab shows engine-computed attacks from equipped weapons', () => {
-  globalThis.localStorage = { getItem: () => 'sheet', setItem() {} };
+  mockLocalStorage('sheet', null);   // Combat tab; attacks are read-only (no edit mode needed)
   try {
     const { rec } = dryRunRegister(register, META, { deps: { 'dnd55e-core-rules': RICH_ENGINE } });
     const section = rec.articleSections.find(s => s.kind === 'characters');
@@ -269,11 +294,11 @@ test('sheets: Sheet tab shows engine-computed attacks from equipped weapons', ()
     assert.match(out.html, /Longsword/, 'equipped weapon shown');
     assert.match(out.html, /\+5/, 'attack bonus');
     assert.match(out.html, /Sap/, 'weapon mastery property');
-  } finally { delete globalThis.localStorage; }
+  } finally { clearLocalStorage(); }
 });
 
 test('sheets: Backpack offers compendium pickers + attunement counter', () => {
-  globalThis.localStorage = { getItem: () => 'backpack', setItem() {} };
+  mockLocalStorage('backpack', 'edit');
   try {
     const { rec } = dryRunRegister(register, META, { deps: { 'dnd55e-core-rules': RICH_ENGINE } });
     const section = rec.articleSections.find(s => s.kind === 'characters');
@@ -282,7 +307,7 @@ test('sheets: Backpack offers compendium pickers + attunement counter', () => {
     assert.match(out.html, /Attuned 1\/3/, 'attunement counter from the engine');
     assert.match(out.html, /✦/, 'attunement toggle');
     assert.match(out.html, /Sap/, 'weapon mastery shown on the row');
-  } finally { delete globalThis.localStorage; }
+  } finally { clearLocalStorage(); }
 });
 
 test('sheets: Backpack add-item + attune actions do not throw', () => {

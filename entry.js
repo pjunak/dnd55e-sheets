@@ -5,23 +5,28 @@
 //  collection): all data lives in `character.addonData['dnd55e-sheets']`,
 //  written via host.store.patchAddonData.
 //
-//  The sheet is presented as TABS inside the one article section the host
-//  gives us:
-//    • Overview   — identity, ability scores, an at-a-glance combat strip, notes.
-//    • Sheet      — combat block (HP +/-, with engine-mode manual overrides),
-//                   saving throws, skills, passives.
-//    • Spellbook  — editable spell cards; engine mode adds prepared/cantrip slots,
-//                   granted/choose-grant sections, forced-duplicate colouring.
-//    • Backpack   — editable inventory grouped by carry location + currency.
-//    • Builder    — appears ONLY when the core-rules + compendium addons are
-//                   present (guided progression). Hidden in standalone, where
-//                   every tab is hand-editable instead. See docs/RULES_EDGE_CASES.md.
+//  The sheet has a persistent HEADER (identity + the vital stat strip: HP ± / AC /
+//  Init / Speed / Proficiency / Passive — always visible, on every tab) above a
+//  TABBED body, inside the one article section the host gives us:
+//    • Overview   — ability scores, saving throws, skills, notes (the stat block).
+//    • Combat     — attacks from equipped/ready weapons + defenses (id 'sheet').
+//    • Spellbook  — prepared/cantrip slots, granted/choose-grant, extras (UI-4).
+//    • Backpack   — inventory grouped by carry location + currency.
+//    • Builder    — guided progression; engine mode + MODIFICATION MODE only.
+//
+//  ── Modification mode (the play ↔ edit toggle) ──
+//  A per-character flag (localStorage 'dse-mode:<cid>'); view is the default. View
+//  is a clean, read-only sheet — the one live-play exception is HP ±. Edit reveals
+//  the building affordances: the Builder tab (engine) or hand-editable tiles/rows
+//  (standalone), the vitals' ✎/↺ overrides, and the spell/inventory editors.
+//  Anonymous users never enter edit mode. See docs/RULES_EDGE_CASES.md (UI-7).
 //
 //  ── Module layout (decomposed; native ES modules, no build step) ──
 //    helpers.js          pure constants + helpers (num/abilityMod/signed/uid/
 //                        titleize/clampHp/blank/sheetOf).
 //    engine.js           decision/derivation pipeline + viewModel + mutators.
-//    ui.js               shared render primitives (statBox/rowLine/spellChip/…).
+//    ui.js               shared render primitives (section/heroTile/abilityTile/…).
+//    panel.header.js     the persistent identity + vital-stat header + mode toggle.
 //    panel.overview.js   ┐
 //    panel.sheet.js      │  one render module per tab.
 //    panel.spellbook.js  │
@@ -43,6 +48,7 @@ import {
 } from './helpers.js';
 import { makeEngine } from './engine.js';
 import { makeUI } from './ui.js';
+import { makeHeaderPanel } from './panel.header.js';
 import { makeOverviewPanel } from './panel.overview.js';
 import { makeSheetPanel } from './panel.sheet.js';
 import { makeSpellbookPanel } from './panel.spellbook.js';
@@ -66,6 +72,7 @@ export default function register(host) {
   ctx.viewModel = ctx.engine.viewModel;     // hot path — promote for panel destructuring
   ctx.ui = makeUI(ctx);
   ctx.panels = {
+    ...makeHeaderPanel(ctx),
     ...makeOverviewPanel(ctx),
     ...makeSheetPanel(ctx),
     ...makeSpellbookPanel(ctx),
@@ -74,20 +81,31 @@ export default function register(host) {
   };
 
   const { getRules, safeHydrate, decisionsOf, mutate } = ctx.engine;
-  const { panelOverview, panelSheet, panelSpellbook, panelBackpack, panelBuilder } = ctx.panels;
+  const { panelHeader, panelOverview, panelSheet, panelSpellbook, panelBackpack, panelBuilder } = ctx.panels;
+
+  // ── Modification mode ────────────────────────────────────────────
+  //  A per-character "are we modifying or playing" flag (localStorage). View is
+  //  the default: a clean, read-only sheet (HP ± is the one live-play exception).
+  //  Edit exposes the building affordances — and ONLY in edit mode does the
+  //  Builder tab appear (engine) or the tabs become hand-editable (standalone).
+  //  Anonymous users can never enter edit mode.
+  const modeKey = (cid) => 'dse-mode:' + cid;
+  const inEditMode = (cid, editable) => {
+    if (!editable) return false;
+    try { return localStorage.getItem(modeKey(cid)) === 'edit'; } catch (_) { return false; }
+  };
 
   // ── Tab model ────────────────────────────────────────────────────
-  //  Standalone exposes every tab in editable form; the Builder appears only
-  //  with the engine. In engine mode the Spellbook appears only if the character
-  //  actually has spells (caster / granted / manual) — UI-4.
-  const visibleTabs = (engine, hasSpells) => {
+  //  Content tabs are always present; the Spellbook only when the character has
+  //  spells (UI-4); the Builder only in engine mode AND modification mode.
+  const visibleTabs = (engine, hasSpells, edit) => {
     const tabs = [
-      { id: 'overview',  icon: '🪪', label: t('tab.overview') },
-      { id: 'sheet',     icon: '⚔️', label: t('tab.sheet') },
+      { id: 'overview',  icon: '🪪', label: t('tab.overview'),  hint: t('tab.overviewHint') },
+      { id: 'sheet',     icon: '⚔️', label: t('tab.sheet'),     hint: t('tab.sheetHint') },
     ];
-    if (hasSpells) tabs.push({ id: 'spellbook', icon: '📖', label: t('tab.spellbook') });
-    tabs.push({ id: 'backpack', icon: '🎒', label: t('tab.backpack') });
-    if (engine) tabs.push({ id: 'builder', icon: '🛠️', label: t('tab.builder') });
+    if (hasSpells) tabs.push({ id: 'spellbook', icon: '📖', label: t('tab.spellbook'), hint: t('tab.spellbookHint') });
+    tabs.push({ id: 'backpack', icon: '🎒', label: t('tab.backpack'), hint: t('tab.backpackHint') });
+    if (engine && edit) tabs.push({ id: 'builder', icon: '🛠️', label: t('tab.builder'), hint: t('tab.builderHint'), tool: true });
     return tabs;
   };
   const tabKey = (id) => 'dse-tab:' + id;
@@ -106,6 +124,7 @@ export default function register(host) {
     if (!c) return null;
     const s = sheetOf(c);
     const editable = !host.role.isAnonymous();
+    const edit = inEditMode(c.id, editable);
     const engine = getRules();
     // Hydrate first (we need the computed sheet to decide tab visibility).
     const result = engine ? safeHydrate(engine, decisionsOf(s, engine)) : null;
@@ -114,34 +133,39 @@ export default function register(host) {
     const hasSpells = !engine
       || !!(comp && comp.spellcasting && ((comp.spellcasting.perClass || []).length || (comp.spellcasting.granted || []).length))
       || (Array.isArray(s.spells) && s.spells.length > 0);
-    const tabs = visibleTabs(engine, hasSpells);
+    const tabs = visibleTabs(engine, hasSpells, edit);
     const active = currentTab(c.id, tabs);
     const pid = panelId(c.id);
 
-    // Tab bar — full ARIA tablist: each tab links role=tab + aria-selected +
-    // aria-controls to the panel, and Left/Right arrows move between tabs.
-    const tabBar = `
-      <div role="tablist" aria-label="${esc(t('sheet.title'))}" style="display:flex;flex-wrap:wrap;gap:var(--space-1);border-bottom:1px solid rgba(var(--gold-muted),.25);margin-bottom:var(--space-3)">
-        ${tabs.map((tb) => {
-          const on = tb.id === active;
-          return `<button role="tab" id="${esc(tabBtnId(c.id, tb.id))}" aria-selected="${on}" aria-controls="${esc(pid)}" tabindex="${on ? '0' : '-1'}"
-            style="background:${on ? 'rgba(var(--accent-gold-rgb),.12)' : 'transparent'};color:${on ? 'var(--text-parchment)' : 'var(--text-muted)'};border:none;border-bottom:2px solid ${on ? 'var(--accent-gold)' : 'transparent'};padding:var(--space-2) var(--space-3);font-size:var(--text-sm);font-weight:${on ? '600' : '400'};cursor:pointer;border-radius:var(--radius-sm) var(--radius-sm) 0 0"
-            ${host.h.dataAction(host.action('tab'), c.id, tb.id)}
-            ${host.h.dataOn('keydown', host.action('tabKey'), '$ev', c.id, tb.id)}>${esc(tb.icon)} ${esc(tb.label)}</button>`;
-        }).join('')}
-      </div>`;
+    // ── Tab bar — full ARIA tablist: each tab links role=tab + aria-selected +
+    //    aria-controls to the panel, Left/Right arrows move between tabs. The
+    //    Builder (a build tool, not content) is pushed to the right with a tint.
+    const tabBtn = (tb) => {
+      const on = tb.id === active;
+      const tint = tb.tool
+        ? (on ? 'background:rgba(var(--accent-gold-rgb),.16);color:var(--accent-gold)' : 'background:rgba(var(--accent-gold-rgb),.05);color:var(--text-light)')
+        : (on ? 'background:rgba(var(--accent-gold-rgb),.12);color:var(--text-parchment)' : 'background:transparent;color:var(--text-muted)');
+      return `<button role="tab" id="${esc(tabBtnId(c.id, tb.id))}" aria-selected="${on}" aria-controls="${esc(pid)}" tabindex="${on ? '0' : '-1'}"
+        title="${esc(tb.hint || tb.label)}"
+        style="${tint};border:none;border-bottom:3px solid ${on ? 'var(--accent-gold)' : 'transparent'};${tb.tool ? 'margin-left:auto;' : ''}padding:var(--space-2) var(--space-3);font-size:var(--text-sm);font-weight:${on ? '600' : '500'};cursor:pointer;border-radius:var(--radius) var(--radius) 0 0;display:inline-flex;align-items:center;gap:var(--space-1);white-space:nowrap"
+        ${host.h.dataAction(host.action('tab'), c.id, tb.id)}
+        ${host.h.dataOn('keydown', host.action('tabKey'), '$ev', c.id, tb.id)}><span aria-hidden="true">${esc(tb.icon)}</span> ${esc(tb.label)}</button>`;
+    };
+    const tabBar = `<div role="tablist" aria-label="${esc(t('sheet.title'))}" style="display:flex;flex-wrap:wrap;gap:var(--space-1);border-bottom:1px solid var(--border-subtle);margin-bottom:var(--space-4)">${tabs.map(tabBtn).join('')}</div>`;
 
     let panel = '';
-    if (active === 'overview') panel = panelOverview(c, s, comp);
-    else if (active === 'sheet') panel = panelSheet(c, s, editable, comp, warnings);
-    else if (active === 'spellbook') panel = panelSpellbook(c, s, editable, comp, engine);
-    else if (active === 'backpack') panel = panelBackpack(c, s, editable, comp, engine);
-    else if (active === 'builder') panel = panelBuilder(c, s, editable, comp, warnings, engine);
+    if (active === 'overview') panel = panelOverview(c, s, edit, comp, engine);
+    else if (active === 'sheet') panel = panelSheet(c, s, edit, comp, engine);
+    else if (active === 'spellbook') panel = panelSpellbook(c, s, edit, comp, engine);
+    else if (active === 'backpack') panel = panelBackpack(c, s, edit, comp, engine);
+    else if (active === 'builder') panel = panelBuilder(c, s, edit, comp, warnings, engine);
 
     return {
       title: '🎲 ' + t('sheet.title'),
-      html: `<div class="addon-dnd55e-sheets" style="display:flex;flex-direction:column">${tabBar}
-        <div role="tabpanel" id="${esc(pid)}" aria-labelledby="${esc(tabBtnId(c.id, active))}" tabindex="0">${panel}</div></div>`,
+      html: `<div class="addon-dnd55e-sheets" style="display:flex;flex-direction:column;gap:var(--space-4)">
+        ${panelHeader(c, s, comp, editable, edit, engine, warnings)}
+        <div>${tabBar}
+          <div role="tabpanel" id="${esc(pid)}" aria-labelledby="${esc(tabBtnId(c.id, active))}" tabindex="0">${panel}</div></div></div>`,
     };
   });
 
@@ -168,7 +192,8 @@ export default function register(host) {
     const hasSpells = !engine
       || !!(comp && comp.spellcasting && ((comp.spellcasting.perClass || []).length || (comp.spellcasting.granted || []).length))
       || (Array.isArray(s.spells) && s.spells.length > 0);
-    const tabs = visibleTabs(engine, hasSpells);
+    const editable = !host.role.isAnonymous();
+    const tabs = visibleTabs(engine, hasSpells, inEditMode(cid, editable));
     const ids = tabs.map((tb) => tb.id);
     const cur = ids.indexOf(tabId);
     if (cur < 0) return;
@@ -184,6 +209,50 @@ export default function register(host) {
       const focusId = tabBtnId(cid, ids[next]);
       setTimeout(() => { const el = document.getElementById(focusId); if (el) el.focus(); }, 0);
     } catch (_) {}
+  });
+
+  // ── Modification mode toggle (per character, localStorage). Anonymous users
+  //    can't enter it. Removing the key (not writing 'view') keeps storage clean. ──
+  host.registerAction('setMode', (cid, mode) => {
+    if (host.role.isAnonymous()) return;
+    try {
+      if (String(mode) === 'edit') localStorage.setItem(modeKey(cid), 'edit');
+      else localStorage.removeItem(modeKey(cid));
+    } catch (_) {}
+    host.ui.rerender();
+  });
+
+  // ── Standalone inline edit (modification mode, no engine). These write the flat
+  //    decision fields the standalone viewModel reads. In engine mode the same
+  //    fields are computed, so these controls aren't rendered (the Builder owns
+  //    them) — the actions stay guarded/harmless regardless. ──
+  const STR_FIELDS = { player: 1, className: 1, subclass: 1, race: 1, background: 1, alignment: 1, notes: 1 };
+  const NUM_FIELDS = { level: 1, maxHp: 1, hp: 1, tempHp: 1, ac: 1, initiative: 1, speed: 1, profBonus: 1 };
+  const SKILL_IDS = new Set(SKILLS.map((sk) => sk.id));
+  host.registerAction('setField', (cid, field, value) => {
+    if (!STR_FIELDS[field] && !NUM_FIELDS[field]) return;
+    mutate(cid, (s) => {
+      if (STR_FIELDS[field]) { s[field] = String(value == null ? '' : value); return s; }
+      let n = num(value, 0);
+      if (field === 'level') n = Math.max(1, n);
+      else if (field === 'maxHp' || field === 'tempHp' || field === 'speed') n = Math.max(0, n);
+      s[field] = n;
+      if (field === 'maxHp') s.hp = clampHp(num(s.hp, 0), n);
+      else if (field === 'hp') s.hp = clampHp(n, num(s.maxHp, 0));
+      return s;
+    });
+  });
+  host.registerAction('setAbility', (cid, ability, value) => {
+    if (ABILITIES.indexOf(ability) < 0) return;
+    mutate(cid, (s) => { s.abilities = { ...s.abilities, [ability]: Math.max(1, Math.min(30, num(value, 10))) }; return s; });
+  });
+  host.registerAction('toggleSave', (cid, ability) => {
+    if (ABILITIES.indexOf(ability) < 0) return;
+    mutate(cid, (s) => { s.saveProf = { ...s.saveProf, [ability]: !s.saveProf[ability] }; return s; });
+  });
+  host.registerAction('toggleSkill', (cid, skillId) => {
+    if (!SKILL_IDS.has(skillId)) return;
+    mutate(cid, (s) => { s.skillProf = { ...s.skillProf, [skillId]: !s.skillProf[skillId] }; return s; });
   });
 
   // HP +/- → one clamp rule (clampHp): with a max>0 clamp into [0,max], else floor at 0.

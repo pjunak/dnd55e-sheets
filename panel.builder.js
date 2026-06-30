@@ -11,8 +11,8 @@
 export function makeBuilderPanel(ctx) {
   const { host, t, ABILITIES, SKILLS, num, signed, abilityMod, titleize, ui, engine: E } = ctx;
   const { esc, dataAction, dataOn } = host.h;
-  const { sectionLabel, miniStat, selectBox, fieldRow, choiceBlock, engineBanner } = ui;
-  const { builderModel, collectChoices, viewModel } = E;
+  const { section, miniStat, selectBox, fieldRow, choiceBlock } = ui;
+  const { builderModel, collectChoices } = E;
 
   // Feature-detect every engine list-method: `(engine.fn ? engine.fn(args) : [])
   // || []`. A partial engine (missing listSpecies/listFeats/…) degrades the
@@ -37,8 +37,7 @@ export function makeBuilderPanel(ctx) {
     ].join('');
 
     return `
-      <div style="display:flex;flex-direction:column;gap:var(--space-4)">
-        ${engineBanner(viewModel(s, comp), warnings)}
+      <div style="display:flex;flex-direction:column;gap:var(--space-5)">
         <div style="display:flex;flex-wrap:wrap;gap:var(--space-2)">${summary}</div>
         ${builderAbilities(c, base, comp, ro)}
         ${builderIdentity(c, s, engine, ro)}
@@ -67,9 +66,9 @@ export function makeBuilderPanel(ctx) {
         <div style="font-size:var(--text-xs);color:var(--text-muted);margin-top:var(--space-1)">→ <strong style="color:var(--text-parchment)">${esc(String(fin))}</strong> ${esc(signed(abilityMod(fin)))}${bonus ? ` <span style="color:var(--color-success)">${esc(signed(bonus))}</span>` : ''}</div>
       </div>`;
     }).join('');
-    return `<div>${sectionLabel(t('builder.abilities'))}
-      <div style="color:var(--text-muted);font-size:var(--text-xs);margin-bottom:var(--space-2)">${esc(t('builder.baseHint'))}</div>
-      <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:var(--space-2)">${cells}</div></div>`;
+    return section(t('builder.abilities'),
+      `<div style="color:var(--text-muted);font-size:var(--text-xs);margin-bottom:var(--space-2)">${esc(t('builder.baseHint'))}</div>
+       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(4rem,1fr));gap:var(--space-2)">${cells}</div>`);
   }
 
   // Identity: species (+lineage), background, alignment, player.
@@ -89,7 +88,7 @@ export function makeBuilderPanel(ctx) {
     rows.push(fieldRow(t('field.alignment'), ro
       ? `<span style="color:var(--text-parchment)">${esc(s.alignment || t('misc.notSet'))}</span>`
       : `<input class="edit-input" value="${esc(s.alignment || '')}"${dataOn('change', host.action('builderField'), c.id, 'alignment', '$value')}>`));
-    return `<div>${sectionLabel(t('builder.identity'))}${rows.join('')}</div>`;
+    return section(t('builder.identity'), rows.join(''));
   }
 
   // Classes: ordered classes[] with class / level / subclass + add/remove.
@@ -112,7 +111,7 @@ export function makeBuilderPanel(ctx) {
       </div>`;
     }).join('');
     const addBtn = ro ? '' : `<button class="inline-create-btn" style="margin-top:var(--space-2)"${dataAction(host.action('builderAddClass'), c.id)}>＋ ${esc(t('builder.addClass'))}</button>`;
-    return `<div>${sectionLabel(t('builder.classes'))}${rows}${addBtn}</div>`;
+    return section(t('builder.classes'), rows + addBtn);
   }
 
   // Choices: background ASI + per-class grant choices + ASI-level feat/ASI.
@@ -136,7 +135,7 @@ export function makeBuilderPanel(ctx) {
     for (const ch of collectChoices(classes, engine)) blocks.push(renderDescriptor(c, s, ch, engine, ro));
 
     if (!blocks.length) return '';
-    return `<div>${sectionLabel(t('builder.choices'))}<div style="display:flex;flex-direction:column;gap:var(--space-2)">${blocks.join('')}</div></div>`;
+    return section(t('builder.choices'), `<div style="display:flex;flex-direction:column;gap:var(--space-2)">${blocks.join('')}</div>`);
   }
 
   // Render one choice descriptor from collectChoices (skills / expertise /
@@ -219,7 +218,7 @@ export function makeBuilderPanel(ctx) {
       }
     }
     if (!rows.length) return '';
-    return `<div>${sectionLabel(t('builder.progression'))}${rows.join('')}</div>`;
+    return section(t('builder.progression'), rows.join(''));
   }
 
   return { panelBuilder };
