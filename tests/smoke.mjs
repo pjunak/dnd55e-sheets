@@ -6,29 +6,49 @@
 // NOTE: the harness import path assumes the host repo (ttrpg-codex) is checked
 // out as a SIBLING of this addon repo — i.e. both under .../GitHub/. This is a
 // dev-only test; the install green-gate is `tests.server` (none needed here).
+//
+// The sheet integrates by REPLACING the host's `characters:body` fragment with a
+// tab strip (registerFragmentOp · replace) — the lore becomes the Overview tab and
+// the D&D tabs follow. So these tests drive `rec.fragmentOps[].spec.render(html,
+// ctx)` (ctx.entity = the character; html = the host lore), forcing the active tab
+// via localStorage 'dse-tab:<cid>'. Editing is role-gated (editor by default;
+// pass { isAnonymous: true } for the read-only path).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { dryRunRegister, smokeRegistrations, createMockHost } from '../../ttrpg-codex/web/js/addon-test-harness.mjs';
 import register from '../entry.js';
 
-// localStorage mock — force the active tab AND (optionally) modification mode, so
-// the edit-only surfaces (the Builder tab, the spell pool, the add pickers) render
-// under test. The sheet keys these per character: 'dse-tab:<cid>' / 'dse-mode:<cid>'.
-function mockLocalStorage(tab, mode) {
+function mockLocalStorage(tab) {
   globalThis.localStorage = {
-    getItem: (k) => (String(k).startsWith('dse-mode:') ? (mode || null) : (tab || null)),
+    getItem: (k) => (String(k).startsWith('dse-tab:') ? (tab || null) : null),
     setItem() {}, removeItem() {},
   };
 }
 function clearLocalStorage() { delete globalThis.localStorage; }
 
+// Invoke the body-fragment render (the whole sheet). `lore` stands in for the
+// host's rendered description; defaults to a marked block so the Overview tab can
+// be asserted to pass it through.
+function renderBody(rec, char, lore) {
+  const frag = rec.fragmentOps.find((f) => f.target === 'characters:body');
+  const html = lore != null ? lore : '<div class="md-view"><p>LORE_BODY</p></div>';
+  return frag.spec.render(html, { entity: char, kind: 'characters', target: 'characters:body' });
+}
+
 const META = {
   id: 'dnd55e-sheets',
-  permissions: [
-    'ui:article-section:characters', 'ui:editor-fields:characters',
-    'ui:action', 'ui:settings-tab', 'data:read:characters', 'data:write:characters.addonData',
-  ],
+  permissions: ['ui:override', 'ui:action', 'ui:settings-tab', 'data:read:characters', 'data:write:characters.addonData'],
   optionalDependencies: { 'dnd55e-core-rules': { range: '>=0.1.0' } },
+};
+
+const FIGHTER = {
+  id: 'c1', name: 'Thorin',
+  addonData: { 'dnd55e-sheets': {
+    className: 'Fighter', level: 5, profBonus: 3,
+    abilities: { STR: 16, DEX: 12, CON: 15, INT: 10, WIS: 13, CHA: 8 },
+    maxHp: 44, hp: 40, ac: 18, saveProf: { STR: true, CON: true },
+    skillProf: { athletics: true, perception: true },
+  } },
 };
 
 // A fake rules engine to exercise the soft-use consumption path (M4).
@@ -48,10 +68,12 @@ const FAKE_ENGINE = {
 test('sheets: register is clean + wires the expected surface', () => {
   const { ok, rec, error } = dryRunRegister(register, META);
   assert.ok(ok, error);
-  assert.ok(rec.articleSections.some(s => s.kind === 'characters'), 'an article section on characters');
-  assert.ok(rec.editorFields.some(e => e.kind === 'characters'), 'editor fields on characters');
+  assert.ok(rec.fragmentOps.some(f => f.target === 'characters:body' && f.spec.op === 'replace'), 'replaces the character body fragment');
   assert.ok(rec.actions.some(a => a.name === 'hp'), 'the hp action');
+  assert.ok(rec.actions.some(a => a.name === 'tab'), 'the tab action');
   assert.ok(rec.settingsTabs.length >= 1, 'a settings tab');
+  assert.ok(!rec.articleSections.length, 'no standalone article section (we own the body instead)');
+  assert.ok(!rec.editorFields.length, 'no editor fields (the host edit form stays host-only)');
 });
 
 test('sheets: renderers survive the smoke pass (sparse entity)', () => {
@@ -60,44 +82,47 @@ test('sheets: renderers survive the smoke pass (sparse entity)', () => {
   assert.ok(smoke.ok, JSON.stringify(smoke.failures));
 });
 
-test('sheets: article section renders with populated addonData', () => {
-  const { rec } = dryRunRegister(register, META);
-  const section = rec.articleSections.find(s => s.kind === 'characters');
-  const out = section.fn({
-    id: 'c1', name: 'Thorin',
-    addonData: { 'dnd55e-sheets': {
-      className: 'Fighter', race: 'Dwarf', level: 5, profBonus: 3,
-      abilities: { STR: 16, DEX: 12, CON: 15, INT: 10, WIS: 13, CHA: 8 },
-      maxHp: 44, hp: 40, ac: 18, saveProf: { STR: true, CON: true },
-      skillProf: { athletics: true, perception: true },
-    } },
-  });
-  assert.ok(out && typeof out.html === 'string', 'returns {title, html}');
-  assert.match(out.html, /Fighter/, 'shows the class');
-  assert.match(out.html, /\+3/, 'shows STR modifier (+3)');
-  assert.doesNotMatch(out.html, /Builder/, 'no Builder tab in standalone (no engine)');
-});
-
-test('sheets: shows engine-computed values + Builder tab (modification mode)', () => {
-  mockLocalStorage(null, 'edit');   // default tab (overview) + modification mode
+test('sheets: Overview tab is the host lore (reused, not duplicated)', () => {
+  mockLocalStorage('overview');
   try {
-    const { rec } = dryRunRegister(register, META, { deps: { 'dnd55e-core-rules': FAKE_ENGINE } });
-    const section = rec.articleSections.find(s => s.kind === 'characters');
-    const out = section.fn({ id: 'c9', name: 'Mage', addonData: { 'dnd55e-sheets': { className: 'Wizard', hp: 40, abilities: { CON: 14 } } } });
-    assert.match(out.html, /Builder/, 'Builder tab appears with the engine in modification mode');
-    assert.match(out.html, /99/, 'header vital strip shows the engine max HP (99)');
-    assert.match(out.html, /17/, 'header vital strip shows the engine AC (17)');
+    const { rec } = dryRunRegister(register, META);
+    const out = renderBody(rec, FIGHTER, '<div class="md-view"><p>UNIQUE_LORE_MARKER</p></div>');
+    assert.match(out, /UNIQUE_LORE_MARKER/, 'the host lore IS the Overview tab');
+    assert.match(out, /Character Sheet/, 'the addon adds D&D tabs');
+    assert.doesNotMatch(out, /Saving Throws/, 'D&D stat panels live on other tabs, not Overview');
   } finally { clearLocalStorage(); }
 });
 
-test('sheets: Builder tab is hidden in view mode (engine present, not modifying)', () => {
-  mockLocalStorage(null, null);   // default tab, view mode (no modification)
+test('sheets: Character Sheet tab shows class + ability mods (standalone)', () => {
+  mockLocalStorage('stats');
+  try {
+    const { rec } = dryRunRegister(register, META);
+    const out = renderBody(rec, FIGHTER);
+    assert.match(out, /Fighter/, 'class line in the vitals bar');
+    assert.match(out, /\+3/, 'STR modifier (+3)');
+    assert.doesNotMatch(out, /Builder/, 'no Builder tab in standalone (no engine)');
+  } finally { clearLocalStorage(); }
+});
+
+test('sheets: engine-computed vitals + Builder tab (editor, engine present)', () => {
+  mockLocalStorage('stats');
   try {
     const { rec } = dryRunRegister(register, META, { deps: { 'dnd55e-core-rules': FAKE_ENGINE } });
-    const section = rec.articleSections.find(s => s.kind === 'characters');
-    const out = section.fn({ id: 'c9b', name: 'Mage', addonData: { 'dnd55e-sheets': { className: 'Wizard' } } });
-    assert.doesNotMatch(out.html, /Builder/, 'no Builder tab until you enter modification mode');
-    assert.match(out.html, /✎ Edit/, 'the Edit (modification-mode) toggle is offered');
+    const out = renderBody(rec, { id: 'c9', name: 'Mage', addonData: { 'dnd55e-sheets': { className: 'Wizard', hp: 40, abilities: { CON: 14 } } } });
+    assert.match(out, /Builder/, 'Builder tab appears (engine + editor)');
+    assert.match(out, /99/, 'vitals bar shows the engine max HP (99)');
+    assert.match(out, /17/, 'vitals bar shows the engine AC (17)');
+  } finally { clearLocalStorage(); }
+});
+
+test('sheets: anonymous viewer gets a read-only sheet (no Builder, no inputs)', () => {
+  mockLocalStorage('stats');
+  try {
+    const { rec } = dryRunRegister(register, META, { deps: { 'dnd55e-core-rules': FAKE_ENGINE }, isAnonymous: true });
+    const out = renderBody(rec, { id: 'ca', name: 'Mage', addonData: { 'dnd55e-sheets': { className: 'Wizard' } } });
+    assert.doesNotMatch(out, /Builder/, 'no Builder tab for an anonymous viewer');
+    assert.doesNotMatch(out, /<input/, 'no edit inputs for an anonymous viewer');
+    assert.doesNotMatch(out, /toggleSkill/, 'no prof toggles for an anonymous viewer');
   } finally { clearLocalStorage(); }
 });
 
@@ -148,18 +173,18 @@ const RICH_ENGINE = {
 };
 
 test('sheets: Builder tab renders the guided form when the engine is present', () => {
-  mockLocalStorage('builder', 'edit');   // force the Builder tab (edit-only)
+  mockLocalStorage('builder');
   try {
     const { rec } = dryRunRegister(register, META, { deps: { 'dnd55e-core-rules': RICH_ENGINE } });
-    const section = rec.articleSections.find(s => s.kind === 'characters');
-    const out = section.fn({ id: 'cb', name: 'Hero', addonData: { 'dnd55e-sheets': { className: 'Wizard', abilities: { INT: 15 } } } });
-    assert.match(out.html, /Ability Scores|Class & Levels|Progression/, 'shows Builder sections');
-    assert.match(out.html, /Wizard/, 'class dropdown / resolved class');
-    assert.match(out.html, /<select/, 'renders dropdowns');
+    const out = renderBody(rec, { id: 'cb', name: 'Hero', addonData: { 'dnd55e-sheets': { className: 'Wizard', abilities: { INT: 15 } } } });
+    assert.match(out, /Ability Scores|Class & Levels|Progression/, 'shows Builder sections');
+    assert.match(out, /Wizard/, 'class dropdown / resolved class');
+    assert.match(out, /<select/, 'renders dropdowns');
   } finally { clearLocalStorage(); }
 });
 
 test('sheets: Builder choices resolve into engine inputs (skill prof + expertise)', () => {
+  clearLocalStorage();
   const WIZ = {
     id: 'wizard', name: 'Wizard', hitDie: 'd6', subclassLevel: 3,
     startingProficiencies: { skills: { choose: 2, from: ['arcana', 'history', 'stealth'] } },
@@ -173,9 +198,8 @@ test('sheets: Builder choices resolve into engine inputs (skill prof + expertise
     hydrate: (cd) => { captured = cd; return RICH_ENGINE.hydrate(cd); },
   };
   const { rec } = dryRunRegister(register, META, { deps: { 'dnd55e-core-rules': eng } });
-  const section = rec.articleSections.find(s => s.kind === 'characters');
   // Rendering hydrates the resolved decisions — capture what the engine receives.
-  section.fn({ id: 'cw', name: 'Mage', addonData: { 'dnd55e-sheets': {
+  renderBody(rec, { id: 'cw', name: 'Mage', addonData: { 'dnd55e-sheets': {
     className: 'Wizard',
     featureChoices: { 'skills:wizard#0': 'arcana', 'skills:wizard#1': 'stealth', 'wiz-exp': 'stealth' },
   } } });
@@ -196,8 +220,6 @@ test('sheets: Builder actions mutate the model + materialize without throwing', 
 });
 
 test('sheets: a half-feat chosen at an ASI level applies its ability bump (AB-2)', () => {
-  // A feat-aware engine: GWM is a single-option half-feat (+1 STR), Fey Touched a
-  // CHOICE (+1 of INT/WIS/CHA → needs the sub-pick).
   const FEATS = {
     'great-weapon-master': { id: 'great-weapon-master', name: 'Great Weapon Master', grants: { abilityScoreIncrease: { choose: 1, amount: 1, from: ['STR'] } } },
     'fey-touched': { id: 'fey-touched', name: 'Fey Touched', grants: { abilityScoreIncrease: { choose: 1, amount: 1, from: ['INT', 'WIS', 'CHA'] }, spells: [{ ids: ['misty-step'], alwaysPrepared: true }] } },
@@ -208,61 +230,55 @@ test('sheets: a half-feat chosen at an ASI level applies its ability bump (AB-2)
     getItem: (kind, id) => (kind === 'feat' ? (FEATS[id] || null) : RICH_ENGINE.getItem(kind, id)),
   };
   const { host, rec } = createMockHost(META, { deps: { 'dnd55e-core-rules': FEAT_ENGINE } });
-  let stored = {};   // stateful capture so successive edits accumulate like prod
+  let stored = {};
   host.store.patchAddonData = (_c, itemId, fn) => { stored = fn(stored) || stored; return { id: itemId, addonData: { 'dnd55e-sheets': stored } }; };
   register(host);
   const act = (name, ...args) => rec.actions.find((a) => a.name === name).fn(...args);
   const grantFor = (base) => (stored.abilityGrants || []).find((g) => g.id === base + ':featability');
 
-  // Single-option half-feat → bump applied immediately on feat selection.
   act('builderChoose', 'c1', 'asi:wizard:4:feat', 'great-weapon-master');
   assert.equal(grantFor('asi:wizard:4')?.assign.STR, 1, 'GWM auto-applies +1 STR');
 
-  // Switch to a CHOICE half-feat → the auto grant clears, awaiting the sub-pick…
   act('builderChoose', 'c1', 'asi:wizard:4:feat', 'fey-touched');
   assert.equal(grantFor('asi:wizard:4'), undefined, 'multi-option half-feat waits for the ability sub-pick');
-  // …then the sub-pick applies the +1 to the chosen ability.
   act('builderChoose', 'c1', 'asi:wizard:4:featability', 'CHA');
   assert.equal(grantFor('asi:wizard:4')?.assign.CHA, 1, 'sub-pick applies +1 CHA');
 
-  // Flipping the ASI level back to the +2 mode clears the feat ability grant.
   act('builderChoose', 'c1', 'asi:wizard:4', 'asi');
   assert.equal(grantFor('asi:wizard:4'), undefined, 'mode switch clears the feat grant');
 });
 
 test('sheets: Spellbook separates granted from picks + colours forced duplicates', () => {
-  mockLocalStorage('spellbook', 'edit');   // force the Spellbook tab + modification mode
+  mockLocalStorage('spellbook');
   try {
     const { rec } = dryRunRegister(register, META, { deps: { 'dnd55e-core-rules': RICH_ENGINE } });
-    const section = rec.articleSections.find(s => s.kind === 'characters');
-    const out = section.fn({ id: 'csp', name: 'Mage', addonData: { 'dnd55e-sheets': {
+    const out = renderBody(rec, { id: 'csp', name: 'Mage', addonData: { 'dnd55e-sheets': {
       className: 'Wizard',
       cantrips: { wizard: ['fire-bolt'] },
       preparedSpells: { wizard: ['fireball'] },
       spells: [{ id: 'x1', name: 'Counterspell', level: 3, origin: 'copied' }],
     } } });
-    assert.match(out.html, /Always prepared/, 'granted section header');
-    assert.match(out.html, /Bless/, 'granted (always-prepared) spell shown');
-    assert.match(out.html, /Fireball/, 'prepared pick shown');
-    assert.match(out.html, /Fire Bolt/, 'cantrip pick shown');
-    assert.match(out.html, /Extra spells/, 'extra/copied section');
-    assert.match(out.html, /Counterspell/, 'copied spell shown in extras');
-    assert.match(out.html, /Mage Armor/, 'available (undrafted) spell in the pool');
-    assert.match(out.html, /draggable="true"/, 'draggable spell cards');
-    assert.match(out.html, /data-on-drop=/, 'drop zones for preparation');
+    assert.match(out, /Always prepared/, 'granted section header');
+    assert.match(out, /Bless/, 'granted (always-prepared) spell shown');
+    assert.match(out, /Fireball/, 'prepared pick shown');
+    assert.match(out, /Fire Bolt/, 'cantrip pick shown');
+    assert.match(out, /Extra spells/, 'extra/copied section');
+    assert.match(out, /Counterspell/, 'copied spell shown in extras');
+    assert.match(out, /Mage Armor/, 'available (undrafted) spell in the pool');
+    assert.match(out, /draggable="true"/, 'draggable spell cards');
+    assert.match(out, /data-on-drop=/, 'drop zones for preparation');
   } finally { clearLocalStorage(); }
 });
 
 test('sheets: choose-grant picker renders a filtered pool + pick/unpick actions', () => {
-  mockLocalStorage('spellbook', 'edit');
+  mockLocalStorage('spellbook');
   try {
     const { rec } = dryRunRegister(register, META, { deps: { 'dnd55e-core-rules': RICH_ENGINE } });
-    const section = rec.articleSections.find((s) => s.kind === 'characters');
-    const out = section.fn({ id: 'cmi', name: 'Mage', addonData: { 'dnd55e-sheets': { className: 'Wizard' } } });
-    assert.match(out.html, /Granted spell choices/, 'choices section header');
-    assert.match(out.html, /Magic Initiate/, 'shows the grant source + count');
-    assert.match(out.html, /<option value="fire-bolt">/, 'picker offers the matching level-0 wizard cantrip');
-    assert.doesNotMatch(out.html, /<option value="fireball"/, 'a non-matching (level-3) spell is NOT an option in the cantrip picker');
+    const out = renderBody(rec, { id: 'cmi', name: 'Mage', addonData: { 'dnd55e-sheets': { className: 'Wizard' } } });
+    assert.match(out, /Granted spell choices/, 'choices section header');
+    assert.match(out, /Magic Initiate/, 'shows the grant source + count');
+    assert.match(out, /<option value="fire-bolt">/, 'picker offers the matching level-0 wizard cantrip');
+    assert.doesNotMatch(out, /<option value="fireball"/, 'a non-matching (level-3) spell is NOT an option in the cantrip picker');
   } finally { clearLocalStorage(); }
   const { rec } = dryRunRegister(register, META, { deps: { 'dnd55e-core-rules': RICH_ENGINE } });
   const act = (name, ...args) => rec.actions.find((a) => a.name === name).fn(...args);
@@ -277,36 +293,44 @@ test('sheets: spellbook prepare/cantrip/copy + drag-drop actions do not throw', 
   assert.doesNotThrow(() => act('learnCantrip', 'c1', 'wizard', 'fire-bolt'));
   assert.doesNotThrow(() => act('unprepSpell', 'c1', 'wizard', 'fireball'));
   assert.doesNotThrow(() => act('copySpell', 'c1'));
-  // drag seam: dragstart stashes the ref (+ primes dataTransfer), drop consumes it.
   const ev = { dataTransfer: { setData() {} } };
   assert.doesNotThrow(() => act('spellDragStart', ev, 'mage-armor'));
   assert.doesNotThrow(() => act('spellDrop', 'c1', 'wizard', 'prepared'));
-  assert.doesNotThrow(() => act('spellDrop', 'c1', 'wizard', 'cantrip'));   // nothing stashed → no-op
+  assert.doesNotThrow(() => act('spellDrop', 'c1', 'wizard', 'cantrip'));
 });
 
-test('sheets: Sheet tab shows engine-computed attacks from equipped weapons', () => {
-  mockLocalStorage('sheet', null);   // Combat tab; attacks are read-only (no edit mode needed)
+test('sheets: Combat tab shows engine-computed attacks from equipped weapons', () => {
+  mockLocalStorage('combat');
   try {
     const { rec } = dryRunRegister(register, META, { deps: { 'dnd55e-core-rules': RICH_ENGINE } });
-    const section = rec.articleSections.find(s => s.kind === 'characters');
-    const out = section.fn({ id: 'ck', name: 'Knight', addonData: { 'dnd55e-sheets': { className: 'Fighter' } } });
-    assert.match(out.html, /Attacks/, 'attacks block on the Sheet tab');
-    assert.match(out.html, /Longsword/, 'equipped weapon shown');
-    assert.match(out.html, /\+5/, 'attack bonus');
-    assert.match(out.html, /Sap/, 'weapon mastery property');
+    const out = renderBody(rec, { id: 'ck', name: 'Knight', addonData: { 'dnd55e-sheets': { className: 'Fighter' } } });
+    assert.match(out, /Attacks/, 'attacks block on the Combat tab');
+    assert.match(out, /Longsword/, 'equipped weapon shown');
+    assert.match(out, /\+5/, 'attack bonus');
+    assert.match(out, /Sap/, 'weapon mastery property');
+  } finally { clearLocalStorage(); }
+});
+
+test('sheets: Combat tab renders trackers; ± is a live-play control', () => {
+  mockLocalStorage('combat');
+  try {
+    const { rec } = dryRunRegister(register, META);
+    const out = renderBody(rec, { id: 'ct', name: 'Brn', addonData: { 'dnd55e-sheets': { className: 'Barbarian', resources: [{ id: 'r1', name: 'Rage', current: 2, max: 3 }] } } });
+    assert.match(out, /Trackers/, 'trackers section on the Combat tab');
+    assert.match(out, /Rage/, 'the tracker is shown');
+    assert.match(out, /resourceAdjust/, '± live-play control present');
   } finally { clearLocalStorage(); }
 });
 
 test('sheets: Backpack offers compendium pickers + attunement counter', () => {
-  mockLocalStorage('backpack', 'edit');
+  mockLocalStorage('backpack');
   try {
     const { rec } = dryRunRegister(register, META, { deps: { 'dnd55e-core-rules': RICH_ENGINE } });
-    const section = rec.articleSections.find(s => s.kind === 'characters');
-    const out = section.fn({ id: 'cb2', name: 'Knight', addonData: { 'dnd55e-sheets': { className: 'Fighter', inventory: [{ id: 'i1', ref: 'longsword', name: 'Longsword', location: 'equipped', attuned: true }] } } });
-    assert.match(out.html, /Weapon…|Armor…/, 'compendium add pickers');
-    assert.match(out.html, /Attuned 1\/3/, 'attunement counter from the engine');
-    assert.match(out.html, /✦/, 'attunement toggle');
-    assert.match(out.html, /Sap/, 'weapon mastery shown on the row');
+    const out = renderBody(rec, { id: 'cb2', name: 'Knight', addonData: { 'dnd55e-sheets': { className: 'Fighter', inventory: [{ id: 'i1', ref: 'longsword', name: 'Longsword', location: 'equipped', attuned: true }] } } });
+    assert.match(out, /Weapon…|Armor…/, 'compendium add pickers');
+    assert.match(out, /Attuned 1\/3/, 'attunement counter from the engine');
+    assert.match(out, /✦/, 'attunement toggle');
+    assert.match(out, /Sap/, 'weapon mastery shown on the row');
   } finally { clearLocalStorage(); }
 });
 
@@ -328,33 +352,19 @@ test('sheets: resource tracker actions mutate without throwing', () => {
   assert.doesNotThrow(() => act('resourceDel', 'c1', 'x'));
 });
 
-test('sheets: Combat tab renders trackers; ± works in view mode (live play)', () => {
-  mockLocalStorage('sheet', null);   // Combat tab, VIEW mode (not modifying)
+test('sheets: proficiency dots are direct toggles for editors (standalone)', () => {
+  mockLocalStorage('stats');
   try {
     const { rec } = dryRunRegister(register, META);
-    const section = rec.articleSections.find((s) => s.kind === 'characters');
-    const out = section.fn({ id: 'ct', name: 'Brn', addonData: { 'dnd55e-sheets': { className: 'Barbarian', resources: [{ id: 'r1', name: 'Rage', current: 2, max: 3 }] } } });
-    assert.match(out.html, /Trackers/, 'trackers section on the Combat tab');
-    assert.match(out.html, /Rage/, 'the tracker is shown');
-    assert.match(out.html, /resourceAdjust/, '± live-play control present in view mode');
-  } finally { clearLocalStorage(); }
-});
-
-test('sheets: proficiency dots are quick-toggles in view mode (standalone)', () => {
-  mockLocalStorage('overview', null);   // Overview, VIEW mode (not modifying)
-  try {
-    const { rec } = dryRunRegister(register, META);
-    const section = rec.articleSections.find((s) => s.kind === 'characters');
-    const out = section.fn({ id: 'pv', name: 'Rgr', addonData: { 'dnd55e-sheets': { className: 'Ranger' } } });
-    assert.match(out.html, /toggleSkill/, 'skill dots toggle without entering modification mode');
-    assert.match(out.html, /toggleSave/, 'save dots toggle without entering modification mode');
+    const out = renderBody(rec, { id: 'pv', name: 'Rgr', addonData: { 'dnd55e-sheets': { className: 'Ranger' } } });
+    assert.match(out, /toggleSkill/, 'skill dots toggle directly (editor)');
+    assert.match(out, /toggleSave/, 'save dots toggle directly (editor)');
   } finally { clearLocalStorage(); }
 });
 
 test('sheets: no Spellbook tab for a non-caster with no spells (engine mode)', () => {
   const NONCASTER = { ...RICH_ENGINE, hydrate: () => ({ sheet: { derived: {}, abilities: {}, saves: {}, skills: {}, features: [], totalLevel: 1, spellcasting: { perClass: [], slots: [], granted: [] } }, warnings: [] }) };
   const { rec } = dryRunRegister(register, META, { deps: { 'dnd55e-core-rules': NONCASTER } });
-  const section = rec.articleSections.find(s => s.kind === 'characters');
-  const out = section.fn({ id: 'cf', name: 'Brute', addonData: { 'dnd55e-sheets': { className: 'Fighter' } } });
-  assert.doesNotMatch(out.html, /📖 Spellbook|>Spellbook</, 'spellbook tab hidden for a non-caster');
+  const out = renderBody(rec, { id: 'cf', name: 'Brute', addonData: { 'dnd55e-sheets': { className: 'Fighter' } } });
+  assert.doesNotMatch(out, /Spellbook/, 'spellbook tab hidden for a non-caster');
 });

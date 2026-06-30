@@ -8,24 +8,20 @@
 
 export default {
   // ── Tabs ─────────────────────────────────────────────────────────
+  //  Overview = the host's native lore (we don't own it); the rest are the D&D
+  //  sheet the addon adds. Builder is the rightmost, editors-only, engine mode.
   'tab.overview':     'Overview',
-  'tab.sheet':        'Combat',
+  'tab.stats':        'Character Sheet',
+  'tab.combat':       'Combat',
   'tab.spellbook':    'Spellbook',
   'tab.backpack':     'Backpack',
   'tab.builder':      'Builder',
-  'tab.overviewHint': 'Abilities, saves & skills',
-  'tab.sheetHint':    'Attacks & defenses',
+  'tab.overviewHint': 'Lore & background',
+  'tab.statsHint':    'Abilities, saving throws & skills',
+  'tab.combatHint':   'Attacks & resource trackers',
   'tab.spellbookHint':'Prepared spells & slots',
   'tab.backpackHint': 'Inventory & currency',
   'tab.builderHint':  'Class, levels & choices',
-
-  // ── Modification mode ────────────────────────────────────────────
-  'mode.edit':        'Edit',
-  'mode.done':        'Done',
-  'mode.editing':     'Editing',
-  'mode.editTitle':   'Enter modification mode — change abilities, equipment and choices',
-  'mode.doneTitle':   'Leave modification mode — back to play view',
-  'mode.builderHint': 'The Builder is open below — set class, levels, species and choices there.',
 
   // ── Section headers ──────────────────────────────────────────────
   'sheet.title':      'Character Sheet',
@@ -72,6 +68,7 @@ export default {
   'header.noClass':   'Unnamed adventurer',
   'sheet.savesShort': 'Saves',
   'sheet.notesEmpty': 'No notes yet.',
+  'sheet.notesHint':  'Mechanical notes — resistances, conditions, reminders. Story & lore live in the page description (Edit).',
   'combat.title':     'Attacks',
   'combat.defenses':  'Defenses',
   'combat.noWeapons': 'No weapons readied. Add weapons in the Backpack and mark them Equipped or Ready to see attacks here.',

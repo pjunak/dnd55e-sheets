@@ -281,6 +281,8 @@ everything derived is computed by `hydrate`. (Compare to today's flat blob in
 3. **Sequence** — **tabbed *manual* sheet first** (standalone, no engine), behind the v2 data shape; engine/automation layers in afterward without reshaping data.
 4. **Edit model** — **inline-editable tabs when standalone; when core-rules + compendium are present, inline editing is DISABLED and all editing flows through the Builder tab** (which tracks the full progression — what was chosen at which level). See `DEG-1` for the removal edge case.
 
+   > **Amended 2026-06-30 (host integration).** After researching the host, the UI was reworked to fit it instead of duplicating it: the addon no longer adds a standalone section + its own "edit mode" button. It **replaces the host's `characters:body` fragment** (`registerFragmentOp` · replace) with a tab strip — the host's lore becomes the **Overview** tab, and the host's side-card (name/portrait/species) + relationship sections stay native above. There is **no separate modification mode and no second edit button**: the host's own "✏ Upravit" owns identity/lore, and D&D editing is **direct and role-gated** (editors edit in the tabs / Builder; anonymous = read-only). The addon stops storing host-owned fields (`race`→`c.species`, lore→`c.description`) and dropped `registerEditorFields`. Engine-mode structural building still flows through the **Builder** tab (rightmost, editors only). Open follow-up: the Builder's mechanical species pick is still distinct from the host's free-text `c.species` (the addon can only write `addonData`).
+
 Still open / deferred: encumbrance (info-only vs variant toggle) and resource trackers (Rage/Ki) — both cheap later, not v1-blocking.
 
 ---

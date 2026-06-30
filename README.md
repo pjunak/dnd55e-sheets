@@ -4,29 +4,37 @@ A **fully hand-fillable D&D 5.5e (2024) character sheet** addon for
 [ttrpg-codex](https://github.com/pjunak/ttrpg-codex) (the *O Barvách Draků* CodexHost
 framework). Addon id: `dnd55e-sheets`.
 
-The sheet renders on every character page and stores its data per character in
-`character.addonData['dnd55e-sheets']` — it does **not** own a collection.
+The sheet stores its D&D data per character in `character.addonData['dnd55e-sheets']`
+— it does **not** own a collection, and it does **not** duplicate anything the host
+already owns (name, portrait, species, lore, relationships). It integrates by claiming
+the host's character `body` fragment (`registerFragmentOp` · replace) and turning it
+into a tab strip, so the host's side-card and relationship sections render natively
+above it.
 
 ## What it does
 
-Each character page gets a tabbed character sheet with a **persistent header** —
-identity line plus the vital stat strip (HP with live **+/-**, AC, Initiative, Speed,
-Proficiency, Passive Perception) that stays visible on every tab — over these tabs:
+The character's native page **is** the Overview: portrait, lore, connections and facts
+stay exactly where the host puts them. The addon turns the lore block into the first
+tab of a strip and adds the D&D tabs after it:
 
-- **Overview** — ability scores, saving throws, skills and notes (the stat block).
-- **Combat** — attacks from equipped/ready weapons + defenses.
+- **Overview** — the host's own description (lore), reused as tab 1 (not copied).
+- **Character Sheet** — D&D identity (class/level/background/alignment), ability scores,
+  saving throws, skills, mechanical notes.
+- **Combat** — attacks from equipped/ready weapons + resource trackers (Rage, Ki, slots…).
 - **Spellbook** — prepared/cantrip slots, granted & choose-grant sections, extras
   (shown only when the character has spells).
 - **Backpack** — inventory grouped by carry location + currency.
-- **Builder** — guided progression; appears only with the rules engine **and** in
-  modification mode.
+- **Builder** — guided progression; rightmost, only with the rules engine and only for
+  editors.
 
-**Modification mode** is the play ↔ edit toggle (the **✎ Edit** button in the header).
-*View* is the default: a clean, read-only sheet — the one live-play exception is HP +/-.
-*Edit* reveals the building affordances: hand-editable tiles/rows (standalone) or the
-Builder tab and stat overrides (engine), plus the spell/inventory editors. Anonymous
-viewers never see it. There is also a consolidated **Editor** form on the character
-editor overlay for bulk entry, and a small **Settings** info panel.
+A slim **vitals bar** (HP with live **+/-**, AC, Initiative, Speed, Proficiency, Passive
+Perception, plus a class-level line) sits under the tabs on the mechanical tabs.
+
+**Editing is direct and role-gated — there is no separate "edit mode" and no second edit
+button.** The host's own **✏ Upravit** owns identity/lore/portrait; editors
+(`!isAnonymous()`) change D&D stats directly in the tabs (and the Builder), while
+anonymous viewers get a clean read-only sheet. Live-play controls (HP ±, trackers,
+spell prep, proficiency toggles) follow the same gate.
 
 Everything can be entered by hand. The only math done here is universal D&D arithmetic that
 holds regardless of content — ability modifiers `⌊(score−10)/2⌋` and proficiency totals

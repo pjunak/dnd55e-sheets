@@ -2,39 +2,41 @@
 //  dnd55e-sheets — a fully hand-fillable D&D 5.5e (2024) character sheet.
 //
 //  Rides on the host's CORE `characters` entity (the sheet is NOT an addon
-//  collection): all data lives in `character.addonData['dnd55e-sheets']`,
-//  written via host.store.patchAddonData.
+//  collection): all D&D data lives in `character.addonData['dnd55e-sheets']`,
+//  written via host.store.patchAddonData. The host owns identity/lore (name,
+//  portrait, species, description, relationships…); this addon reads those and
+//  adds ONLY the D&D mechanics — it never duplicates them.
 //
-//  The sheet has a persistent HEADER (identity + the vital stat strip: HP ± / AC /
-//  Init / Speed / Proficiency / Passive — always visible, on every tab) above a
-//  TABBED body, inside the one article section the host gives us:
-//    • Overview   — ability scores, saving throws, skills, notes (the stat block).
-//    • Combat     — attacks from equipped/ready weapons + defenses (id 'sheet').
-//    • Spellbook  — prepared/cantrip slots, granted/choose-grant, extras (UI-4).
-//    • Backpack   — inventory grouped by carry location + currency.
-//    • Builder    — guided progression; engine mode + MODIFICATION MODE only.
+//  ── Integration: a tab strip in place of the lore (ARCH) ──
+//  We claim the host's `characters:body` fragment (registerFragmentOp · replace)
+//  and turn it into a tab strip. The host's side-card (portrait/name/species) and
+//  its relationship/event sections render natively ABOVE us; the lore becomes our
+//  first "Overview" tab (reused, not copied). Tabs:
+//    • Overview        — the host's lore (description), passed in as `html`.
+//    • Character Sheet — ability scores, saving throws, skills, notes.
+//    • Combat          — attacks from equipped/ready weapons + resource trackers.
+//    • Backpack        — inventory grouped by carry location + currency.
+//    • Spellbook       — prepared/cantrip slots, granted/choose-grant (UI-4).
+//    • Builder         — guided progression; engine mode + editors only, rightmost.
+//  A slim vitals bar (HP ± / AC / Init / Speed / PB / Passive + class-level line)
+//  sits under the tabs on the mechanical tabs (panel.header.js).
 //
-//  ── Modification mode (the play ↔ edit toggle) ──
-//  A per-character flag (localStorage 'dse-mode:<cid>'); view is the default. View
-//  is a clean, read-only sheet — the one live-play exception is HP ±. Edit reveals
-//  the building affordances: the Builder tab (engine) or hand-editable tiles/rows
-//  (standalone), the vitals' ✎/↺ overrides, and the spell/inventory editors.
-//  Anonymous users never enter edit mode. See docs/RULES_EDGE_CASES.md (UI-7).
+//  ── Editing: direct, role-gated, NO separate mode ──
+//  The host already owns the one edit affordance ("✏ Upravit", which edits
+//  identity/lore). We don't add a second button: editors (`!isAnonymous()`) edit
+//  D&D directly in the tabs (and the Builder); anonymous viewers see read-only.
+//  Live-play controls (HP ±, trackers, prep, prof toggles) follow the same gate.
 //
 //  ── Module layout (decomposed; native ES modules, no build step) ──
-//    helpers.js          pure constants + helpers (num/abilityMod/signed/uid/
-//                        titleize/clampHp/blank/sheetOf).
+//    helpers.js          pure constants + helpers.
 //    engine.js           decision/derivation pipeline + viewModel + mutators.
 //    ui.js               shared render primitives (section/heroTile/abilityTile/…).
-//    panel.header.js     the persistent identity + vital-stat header + mode toggle.
-//    panel.overview.js   ┐
-//    panel.sheet.js      │  one render module per tab.
-//    panel.spellbook.js  │
+//    panel.header.js     the slim D&D vitals bar.
+//    panel.overview.js   ┐  one render module per tab (Character Sheet / Combat /
+//    panel.sheet.js      │  Spellbook / Backpack / Builder). The Overview tab is
+//    panel.spellbook.js  │  just the host lore, so it has no module.
 //    panel.backpack.js   │
 //    panel.builder.js    ┘
-//    editor.js           registerEditorFields form + collect.
-//  This file is the thin orchestrator: it builds a shared `ctx`, wires the
-//  modules into it, and registers the article section / actions / settings tab.
 //
 //  Style/safety contract: HTML only via host.h (esc/dataAction/dataOn), never
 //  inline onclick; colours/spacing only via design tokens var(--…); every
@@ -54,15 +56,13 @@ import { makeSheetPanel } from './panel.sheet.js';
 import { makeSpellbookPanel } from './panel.spellbook.js';
 import { makeBackpackPanel } from './panel.backpack.js';
 import { makeBuilderPanel } from './panel.builder.js';
-import { registerEditor } from './editor.js';
 
 export default function register(host) {
   const { esc } = host.h;
   const NS = host.id; // 'dnd55e-sheets'
   const { uid, sheetOf } = makeHelpers(host);
 
-  // ── Shared context handed to every module. Built progressively: pure pieces
-  //    first, then the engine pipeline, then the UI primitives, then panels. ──
+  // ── Shared context handed to every module. ──
   const ctx = {
     host, t, NS,
     ABILITIES, COINS, LOCATIONS, SKILLS,
@@ -81,31 +81,20 @@ export default function register(host) {
   };
 
   const { getRules, safeHydrate, decisionsOf, mutate } = ctx.engine;
-  const { panelHeader, panelOverview, panelSheet, panelSpellbook, panelBackpack, panelBuilder } = ctx.panels;
-
-  // ── Modification mode ────────────────────────────────────────────
-  //  A per-character "are we modifying or playing" flag (localStorage). View is
-  //  the default: a clean, read-only sheet (HP ± is the one live-play exception).
-  //  Edit exposes the building affordances — and ONLY in edit mode does the
-  //  Builder tab appear (engine) or the tabs become hand-editable (standalone).
-  //  Anonymous users can never enter edit mode.
-  const modeKey = (cid) => 'dse-mode:' + cid;
-  const inEditMode = (cid, editable) => {
-    if (!editable) return false;
-    try { return localStorage.getItem(modeKey(cid)) === 'edit'; } catch (_) { return false; }
-  };
+  const { vitalsBar, panelOverview, panelSheet, panelSpellbook, panelBackpack, panelBuilder } = ctx.panels;
 
   // ── Tab model ────────────────────────────────────────────────────
-  //  Content tabs are always present; the Spellbook only when the character has
-  //  spells (UI-4); the Builder only in engine mode AND modification mode.
-  const visibleTabs = (engine, hasSpells, edit) => {
+  //  Overview (lore) + the mechanical tabs. Spellbook only when the character has
+  //  spells (UI-4); Builder only in engine mode and for editors (rightmost).
+  const visibleTabs = (engine, hasSpells, editable) => {
     const tabs = [
-      { id: 'overview',  icon: '🪪', label: t('tab.overview'),  hint: t('tab.overviewHint') },
-      { id: 'sheet',     icon: '⚔️', label: t('tab.sheet'),     hint: t('tab.sheetHint') },
+      { id: 'overview', icon: '🪪', label: t('tab.overview'), hint: t('tab.overviewHint') },
+      { id: 'stats',    icon: '📋', label: t('tab.stats'),    hint: t('tab.statsHint') },
+      { id: 'combat',   icon: '⚔️', label: t('tab.combat'),   hint: t('tab.combatHint') },
+      { id: 'backpack', icon: '🎒', label: t('tab.backpack'), hint: t('tab.backpackHint') },
     ];
     if (hasSpells) tabs.push({ id: 'spellbook', icon: '📖', label: t('tab.spellbook'), hint: t('tab.spellbookHint') });
-    tabs.push({ id: 'backpack', icon: '🎒', label: t('tab.backpack'), hint: t('tab.backpackHint') });
-    if (engine && edit) tabs.push({ id: 'builder', icon: '🛠️', label: t('tab.builder'), hint: t('tab.builderHint'), tool: true });
+    if (engine && editable) tabs.push({ id: 'builder', icon: '🛠️', label: t('tab.builder'), hint: t('tab.builderHint'), tool: true });
     return tabs;
   };
   const tabKey = (id) => 'dse-tab:' + id;
@@ -117,60 +106,65 @@ export default function register(host) {
   const panelId = (cid) => 'dse-panel-' + cid;
   const tabBtnId = (cid, tabId) => 'dse-tab-' + cid + '-' + tabId;
 
+  const hasSpellsOf = (engine, comp, s) => !engine
+    || !!(comp && comp.spellcasting && ((comp.spellcasting.perClass || []).length || (comp.spellcasting.granted || []).length))
+    || (Array.isArray(s.spells) && s.spells.length > 0);
+
   // ════════════════════════════════════════════════════════════════
-  //  Article section — the tabbed sheet on a character page
+  //  Body fragment override — the tab strip replaces the host's lore block.
+  //  `render(html, ctx)` gets the rendered lore html + ctx.entity (the
+  //  character). We keep that lore as the Overview tab and add the D&D tabs.
   // ════════════════════════════════════════════════════════════════
-  host.registerArticleSection('characters', (c) => {
-    if (!c) return null;
-    const s = sheetOf(c);
-    const editable = !host.role.isAnonymous();
-    const edit = inEditMode(c.id, editable);
-    const engine = getRules();
-    // Hydrate first (we need the computed sheet to decide tab visibility).
-    const result = engine ? safeHydrate(engine, decisionsOf(s, engine)) : null;
-    const comp = result && result.sheet;
-    const warnings = (result && result.warnings) || [];
-    const hasSpells = !engine
-      || !!(comp && comp.spellcasting && ((comp.spellcasting.perClass || []).length || (comp.spellcasting.granted || []).length))
-      || (Array.isArray(s.spells) && s.spells.length > 0);
-    const tabs = visibleTabs(engine, hasSpells, edit);
-    const active = currentTab(c.id, tabs);
-    const pid = panelId(c.id);
+  host.registerFragmentOp('characters:body', {
+    op: 'replace',
+    render: (html, fctx) => {
+      const c = fctx && fctx.entity;
+      if (!c) return html;                       // defensive: never blank the page
+      const s = sheetOf(c);
+      const editable = !host.role.isAnonymous();
+      const engine = getRules();
+      const result = engine ? safeHydrate(engine, decisionsOf(s, engine)) : null;
+      const comp = result && result.sheet;
+      const warnings = (result && result.warnings) || [];
+      const tabs = visibleTabs(engine, hasSpellsOf(engine, comp, s), editable);
+      const active = currentTab(c.id, tabs);
+      const pid = panelId(c.id);
 
-    // ── Tab bar — full ARIA tablist: each tab links role=tab + aria-selected +
-    //    aria-controls to the panel, Left/Right arrows move between tabs. The
-    //    Builder (a build tool, not content) is pushed to the right with a tint.
-    const tabBtn = (tb) => {
-      const on = tb.id === active;
-      const tint = tb.tool
-        ? (on ? 'background:rgba(var(--accent-gold-rgb),.16);color:var(--accent-gold)' : 'background:rgba(var(--accent-gold-rgb),.05);color:var(--text-light)')
-        : (on ? 'background:rgba(var(--accent-gold-rgb),.12);color:var(--text-parchment)' : 'background:transparent;color:var(--text-muted)');
-      return `<button role="tab" id="${esc(tabBtnId(c.id, tb.id))}" aria-selected="${on}" aria-controls="${esc(pid)}" tabindex="${on ? '0' : '-1'}"
-        title="${esc(tb.hint || tb.label)}"
-        style="${tint};border:none;border-bottom:3px solid ${on ? 'var(--accent-gold)' : 'transparent'};${tb.tool ? 'margin-left:auto;' : ''}padding:var(--space-2) var(--space-3);font-size:var(--text-sm);font-weight:${on ? '600' : '500'};cursor:pointer;border-radius:var(--radius) var(--radius) 0 0;display:inline-flex;align-items:center;gap:var(--space-1);white-space:nowrap"
-        ${host.h.dataAction(host.action('tab'), c.id, tb.id)}
-        ${host.h.dataOn('keydown', host.action('tabKey'), '$ev', c.id, tb.id)}><span aria-hidden="true">${esc(tb.icon)}</span> ${esc(tb.label)}</button>`;
-    };
-    const tabBar = `<div role="tablist" aria-label="${esc(t('sheet.title'))}" style="display:flex;flex-wrap:wrap;gap:var(--space-1);border-bottom:1px solid var(--border-subtle);margin-bottom:var(--space-4)">${tabs.map(tabBtn).join('')}</div>`;
+      // Tab bar — ARIA tablist; the Builder (a tool) is pushed right with a tint.
+      const tabBtn = (tb) => {
+        const on = tb.id === active;
+        const tint = tb.tool
+          ? (on ? 'background:rgba(var(--accent-gold-rgb),.16);color:var(--accent-gold)' : 'background:rgba(var(--accent-gold-rgb),.05);color:var(--text-light)')
+          : (on ? 'background:rgba(var(--accent-gold-rgb),.12);color:var(--text-parchment)' : 'background:transparent;color:var(--text-muted)');
+        return `<button role="tab" id="${esc(tabBtnId(c.id, tb.id))}" aria-selected="${on}" aria-controls="${esc(pid)}" tabindex="${on ? '0' : '-1'}"
+          title="${esc(tb.hint || tb.label)}"
+          style="${tint};border:none;border-bottom:3px solid ${on ? 'var(--accent-gold)' : 'transparent'};${tb.tool ? 'margin-left:auto;' : ''}padding:var(--space-2) var(--space-3);font-size:var(--text-sm);font-weight:${on ? '600' : '500'};cursor:pointer;border-radius:var(--radius) var(--radius) 0 0;display:inline-flex;align-items:center;gap:var(--space-1);white-space:nowrap"
+          ${host.h.dataAction(host.action('tab'), c.id, tb.id)}
+          ${host.h.dataOn('keydown', host.action('tabKey'), '$ev', c.id, tb.id)}><span aria-hidden="true">${esc(tb.icon)}</span> ${esc(tb.label)}</button>`;
+      };
+      const tabBar = `<div role="tablist" aria-label="${esc(t('sheet.title'))}" style="display:flex;flex-wrap:wrap;gap:var(--space-1);border-bottom:1px solid var(--border-subtle);margin-bottom:var(--space-4)">${tabs.map(tabBtn).join('')}</div>`;
 
-    let panel = '';
-    if (active === 'overview') panel = panelOverview(c, s, edit, comp, engine);
-    else if (active === 'sheet') panel = panelSheet(c, s, edit, comp, engine);
-    else if (active === 'spellbook') panel = panelSpellbook(c, s, edit, comp, engine);
-    else if (active === 'backpack') panel = panelBackpack(c, s, edit, comp, engine);
-    else if (active === 'builder') panel = panelBuilder(c, s, edit, comp, warnings, engine);
+      // The Overview tab is the host lore itself; mechanical tabs get the vitals bar.
+      let panel = '';
+      if (active === 'overview') panel = lorePanel(html);
+      else if (active === 'stats') panel = panelOverview(c, s, editable, comp, engine);
+      else if (active === 'combat') panel = panelSheet(c, s, editable, comp, engine);
+      else if (active === 'backpack') panel = panelBackpack(c, s, editable, comp, engine);
+      else if (active === 'spellbook') panel = panelSpellbook(c, s, editable, comp, engine);
+      else if (active === 'builder') panel = panelBuilder(c, s, editable, comp, warnings, engine);
+      const vitals = (active !== 'overview' && active !== 'builder')
+        ? vitalsBar(c, s, comp, editable, engine, warnings) : '';
 
-    return {
-      title: '🎲 ' + t('sheet.title'),
-      html: `<div class="addon-dnd55e-sheets" style="display:flex;flex-direction:column;gap:var(--space-4)">
-        ${panelHeader(c, s, comp, editable, edit, engine, warnings)}
-        <div>${tabBar}
-          <div role="tabpanel" id="${esc(pid)}" aria-labelledby="${esc(tabBtnId(c.id, active))}" tabindex="0">${panel}</div></div></div>`,
-    };
+      return `<div class="addon-dnd55e-sheets" style="display:flex;flex-direction:column">${tabBar}
+        <div role="tabpanel" id="${esc(pid)}" aria-labelledby="${esc(tabBtnId(c.id, active))}" tabindex="0">${vitals}${panel}</div></div>`;
+    },
   });
 
-  // Register the standalone editor-overlay form (+ collect).
-  registerEditor(ctx);
+  function lorePanel(html) {
+    const lore = (typeof html === 'string' && html.trim()) ? html
+      : `<div style="color:var(--text-muted);font-size:var(--text-sm)">${esc(t('sheet.notesEmpty'))}</div>`;
+    return `<div>${lore}</div>`;
+  }
 
   // ════════════════════════════════════════════════════════════════
   //  Actions
@@ -189,11 +183,8 @@ export default function register(host) {
     const s = sheetOf(host.store.getCharacters().find((x) => x && x.id === cid) || {});
     const result = engine ? safeHydrate(engine, decisionsOf(s, engine)) : null;
     const comp = result && result.sheet;
-    const hasSpells = !engine
-      || !!(comp && comp.spellcasting && ((comp.spellcasting.perClass || []).length || (comp.spellcasting.granted || []).length))
-      || (Array.isArray(s.spells) && s.spells.length > 0);
     const editable = !host.role.isAnonymous();
-    const tabs = visibleTabs(engine, hasSpells, inEditMode(cid, editable));
+    const tabs = visibleTabs(engine, hasSpellsOf(engine, comp, s), editable);
     const ids = tabs.map((tb) => tb.id);
     const cur = ids.indexOf(tabId);
     if (cur < 0) return;
@@ -204,29 +195,17 @@ export default function register(host) {
     else if (key === 'End') next = ids.length - 1;
     try { localStorage.setItem(tabKey(cid), String(ids[next])); } catch (_) {}
     host.ui.rerender();
-    // Move focus to the newly-active tab after the re-render paints.
     try {
       const focusId = tabBtnId(cid, ids[next]);
       setTimeout(() => { const el = document.getElementById(focusId); if (el) el.focus(); }, 0);
     } catch (_) {}
   });
 
-  // ── Modification mode toggle (per character, localStorage). Anonymous users
-  //    can't enter it. Removing the key (not writing 'view') keeps storage clean. ──
-  host.registerAction('setMode', (cid, mode) => {
-    if (host.role.isAnonymous()) return;
-    try {
-      if (String(mode) === 'edit') localStorage.setItem(modeKey(cid), 'edit');
-      else localStorage.removeItem(modeKey(cid));
-    } catch (_) {}
-    host.ui.rerender();
-  });
-
-  // ── Standalone inline edit (modification mode, no engine). These write the flat
-  //    decision fields the standalone viewModel reads. In engine mode the same
-  //    fields are computed, so these controls aren't rendered (the Builder owns
-  //    them) — the actions stay guarded/harmless regardless. ──
-  const STR_FIELDS = { player: 1, className: 1, subclass: 1, race: 1, background: 1, alignment: 1, notes: 1 };
+  // ── Direct inline edit (editors only; gated at render by `editable`). These
+  //    write the flat decision fields the standalone viewModel reads. In engine
+  //    mode the same fields are computed and these controls aren't rendered (the
+  //    Builder owns them) — the actions stay guarded/harmless regardless. ──
+  const STR_FIELDS = { player: 1, className: 1, subclass: 1, background: 1, alignment: 1, notes: 1 };
   const NUM_FIELDS = { level: 1, maxHp: 1, hp: 1, tempHp: 1, ac: 1, initiative: 1, speed: 1, profBonus: 1 };
   const SKILL_IDS = new Set(SKILLS.map((sk) => sk.id));
   host.registerAction('setField', (cid, field, value) => {
@@ -265,8 +244,7 @@ export default function register(host) {
   });
 
   // ── Manual overrides (engine mode, ARCH-3) — a typed value beats the computed
-  //    one; ↺ clears back to auto. Written via plain `mutate` so we don't
-  //    re-materialize; viewModel.pick() always prefers overrides[field]. ──
+  //    one; ↺ clears back to auto. ──
   const OVERRIDE_FIELDS = { maxHp: 1, ac: 1, initiative: 1, speed: 1 };
   host.registerAction('setOverrideValue', (cid, field, raw) => {
     if (!OVERRIDE_FIELDS[field]) return;
@@ -301,8 +279,7 @@ export default function register(host) {
   host.registerAction('unlearnCantrip', (cid, classId, ref) => { mutate(cid, (s) => { delRef(s, 'cantrips', classId, ref); return s; }); });
   host.registerAction('prepSpell', (cid, classId, ref) => { mutate(cid, (s) => { addRef(s, 'preparedSpells', classId, ref); return s; }); });
   host.registerAction('unprepSpell', (cid, classId, ref) => { mutate(cid, (s) => { delRef(s, 'preparedSpells', classId, ref); return s; }); });
-  // Drag-and-drop prep via the host drag seam: dragstart stashes the ref + primes
-  // dataTransfer (Firefox needs it to start the drag); drop consumes it.
+  // Drag-and-drop prep via the host drag seam.
   let _dragRef = null;
   host.registerAction('spellDragStart', (ev, ref) => {
     _dragRef = ref != null ? String(ref) : null;
@@ -313,9 +290,7 @@ export default function register(host) {
     if (!ref) return;
     mutate(cid, (s) => { addRef(s, kind === 'cantrip' ? 'cantrips' : 'preparedSpells', classId, ref); return s; });
   });
-  // Choose-grant picks (Magic Initiate / Fey Touched's choose-1 / lineage cantrip).
-  // Keyed by the engine's grant key (`<src>:<id>:<grantId>`); the engine caps to
-  // the choose count on read, so an extra pick is harmless.
+  // Choose-grant picks (Magic Initiate / Fey Touched / lineage cantrip).
   host.registerAction('grantPick', (cid, key, ref) => {
     if (!ref) return;
     mutate(cid, (s) => { const cur = (s.grantChoices[key] || []).slice(); if (!cur.includes(ref)) cur.push(ref); s.grantChoices = { ...s.grantChoices, [key]: cur }; return s; });
@@ -365,8 +340,6 @@ export default function register(host) {
   host.registerAction('currencySet', (cid, coin, value) => {
     mutate(cid, (s) => { s.currency = { ...s.currency, [coin]: Math.max(0, num(value, 0)) }; return s; });
   });
-  // Add a compendium-backed item (carries a `ref` so the engine resolves it for
-  // AC / attacks); armor defaults to equipped, weapons to ready.
   host.registerAction('invAddRef', (cid, kind, ref) => {
     if (!ref) return;
     const engine = getRules();
@@ -378,9 +351,8 @@ export default function register(host) {
     mutate(cid, (s) => { s.inventory = s.inventory.map((it) => (it.id === iid ? { ...it, attuned: !it.attuned } : it)); return s; });
   });
 
-  // ── Resource trackers (Rage / Ki / slots / hit dice…). Manual, work in both
-  //    modes: ± is a live-play action (view), add/rename/set-max is modification.
-  //    Clamp current into [0, max] when max>0, else just floor at 0. ──
+  // ── Resource trackers (Rage / Ki / slots / hit dice…). ± is a live-play action;
+  //    naming/max/add/remove are edits. Clamp current into [0, max] when max>0. ──
   const clampRes = (cur, max) => (num(max, 0) > 0 ? Math.max(0, Math.min(num(max, 0), num(cur, 0))) : Math.max(0, num(cur, 0)));
   host.registerAction('resourceAdd', (cid) => {
     mutate(cid, (s) => { s.resources = s.resources.concat([{ id: uid('res'), name: '', current: 0, max: 0 }]); return s; });
@@ -414,7 +386,7 @@ export default function register(host) {
     builderMutate(cid, (s) => {
       s[field] = String(value);
       if (field === 'race') s.lineage = '';
-      if (field === 'background') { delete s.featureChoices['bgasi']; removeGrant(s, 'bgasi'); }   // re-pick ASI for the new background
+      if (field === 'background') { delete s.featureChoices['bgasi']; removeGrant(s, 'bgasi'); }
     });
   });
   host.registerAction('builderAbility', (cid, ability, value) => {
@@ -442,23 +414,16 @@ export default function register(host) {
       upsertGrant(s, 'bgasi', { type: 'background' }, parseAssign(value));
     });
   });
-  // Generic choice resolution (enumerated / expertise / mastery / ASI mode +
-  // ASI ability / feat). Ability-affecting keys maintain an abilityGrant.
   host.registerAction('builderChoose', (cid, key, value) => {
     builderMutate(cid, (s, engine) => {
       const k = String(key);
       if (value === '' || value == null) delete s.featureChoices[k];
       else s.featureChoices[k] = String(value);
       if (/:featability$/.test(k)) {
-        // a half-feat's chosen ability (+1) — AB-2. (Checked before :ability so the
-        // longer suffix wins.)
         upsertGrant(s, k, { type: 'feat' }, value ? { [String(value)]: 1 } : null);
       } else if (/:ability$/.test(k)) {
-        // an ASI "+2 to one ability" pick
         upsertGrant(s, k, { type: 'asi' }, value ? { [String(value)]: 2 } : null);
       } else if (/:feat$/.test(k)) {
-        // a feat chosen at an ASI level → wire its half-feat ability bump: a
-        // single-option bump applies directly; a choice waits for the sub-pick.
         const abilKey = k.replace(/:feat$/, '') + ':featability';
         removeGrant(s, abilKey); delete s.featureChoices[abilKey];
         const feat = value && engine ? engine.getItem('feat', String(value)) : null;
@@ -467,7 +432,6 @@ export default function register(host) {
           upsertGrant(s, abilKey, { type: 'feat' }, { [asi.from[0]]: num(asi.amount, 1) });
         }
       } else if (/^asi:[^:]+:\d+$/.test(k)) {
-        // the ASI mode switched → clear the dependent grant/choice for the other branch
         if (value !== 'asi') { removeGrant(s, k + ':ability'); delete s.featureChoices[k + ':ability']; }
         if (value !== 'feat') { delete s.featureChoices[k + ':feat']; delete s.featureChoices[k + ':featability']; removeGrant(s, k + ':featability'); }
       }

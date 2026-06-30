@@ -6,8 +6,7 @@
   "hostVersion": ">=1.0.0",
   "entry": "entry.js",
   "permissions": [
-    "ui:article-section:characters",
-    "ui:editor-fields:characters",
+    "ui:override",
     "ui:action",
     "ui:settings-tab",
     "data:read:characters",

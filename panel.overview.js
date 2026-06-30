@@ -1,15 +1,16 @@
 // ═══════════════════════════════════════════════════════════════
-//  panel.overview.js — the Overview tab (the "stat block").
+//  panel.overview.js — the Character Sheet tab (the "stat block").
 //
-//  Ability scores, saving throws, skills and notes — the numbers you reference
-//  constantly, grouped together the way a paper sheet's left column is. Identity
-//  and the vital stats moved to the persistent header, so this tab is no longer
-//  a grab-bag: it's the d20 core.
+//  Ability scores, saving throws, skills and mechanical notes — the d20 core,
+//  grouped the way a paper sheet's left column is. The host's side-card owns
+//  name / portrait / species / lore, so this tab never repeats them; in
+//  standalone it adds a small D&D identity block (class / level / background /
+//  alignment — fields the host has no place for).
 //
-//  Modes: in standalone modification mode the ability scores become inputs and
-//  the save/skill dots become toggles (hand-fill). In engine mode everything is
-//  computed and read-only — you change it in the Builder. Notes are free text in
-//  both modes.
+//  Editing is direct and role-gated (`edit` = the viewer is an editor): in
+//  standalone, ability scores become inputs and save/skill dots become toggles;
+//  in engine mode everything is computed and read-only (you change it in the
+//  Builder). Anonymous viewers see a clean read-only sheet.
 // ═══════════════════════════════════════════════════════════════
 
 export function makeOverviewPanel(ctx) {
@@ -17,11 +18,38 @@ export function makeOverviewPanel(ctx) {
   const { esc, renderMarkdown, dataAction, dataOn } = host.h;
   const { section, abilityTile, profRow } = ui;
 
+  // A labelled free-text / number input that writes a flat field (standalone).
+  function idField(cid, label, field, value, opts) {
+    opts = opts || {};
+    const input = opts.num
+      ? `<input class="edit-input" type="number" inputmode="numeric"${opts.min != null ? ` min="${opts.min}"` : ''} value="${esc(String(value))}" ${dataOn('change', host.action('setField'), cid, field, '$value')}>`
+      : `<input class="edit-input" value="${esc(value || '')}" ${dataOn('change', host.action('setField'), cid, field, '$value')}>`;
+    return `<label style="display:flex;flex-direction:column;gap:2px;font-size:var(--text-xs);color:var(--text-muted)">
+      <span style="text-transform:uppercase;letter-spacing:.03em">${esc(label)}</span>${input}</label>`;
+  }
+
+  function identitySection(c, s) {
+    const cid = c.id;
+    const grid = [
+      idField(cid, t('field.class'), 'className', s.className),
+      idField(cid, t('field.subclass'), 'subclass', s.subclass),
+      idField(cid, t('field.level'), 'level', num(s.level, 1), { num: true, min: 1 }),
+      idField(cid, t('field.background'), 'background', s.background),
+      idField(cid, t('field.alignment'), 'alignment', s.alignment),
+      idField(cid, t('field.player'), 'player', s.player),
+    ].join('');
+    return section(t('sheet.identity'),
+      `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(8.5rem,1fr));gap:var(--space-2)">${grid}</div>`);
+  }
+
   function panelOverview(c, s, edit, comp, engine) {
     const vm = viewModel(s, comp);
     const cid = c.id;
-    const standaloneEdit = edit && !engine;     // ability/identity numeric entry — modification mode
-    const profEditable = !engine;               // save/skill dots toggle as a quick action (view too)
+    const standaloneEdit = edit && !engine;     // ability/identity entry — editors, standalone
+    const profEditable = edit && !engine;       // save/skill dot toggles — editors, standalone
+
+    // ── Identity (standalone editors only — engine builds it in the Builder) ──
+    const identity = standaloneEdit ? identitySection(c, s) : '';
 
     // ── Abilities ───────────────────────────────────────────────────
     const abilityCells = ABILITIES.map((a) => {
@@ -60,15 +88,14 @@ export function makeOverviewPanel(ctx) {
     const skills = section(t('sheet.skills'),
       `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:0 var(--space-4)">${skillRows}</div>`);
 
-    // ── Notes (free text, editable in either mode) ──────────────────
-    const notes = section(t('sheet.notes'), edit
-      ? `<textarea class="edit-input" rows="4" style="width:100%;resize:vertical" placeholder="${esc(t('field.notes'))}"
+    // ── Notes (mechanical — flavour/lore live in the host's description) ─────
+    const notes = (edit || s.notes) ? section(t('sheet.notes'), edit
+      ? `<textarea class="edit-input" rows="3" style="width:100%;resize:vertical" placeholder="${esc(t('sheet.notesHint'))}"
           ${dataOn('change', host.action('setField'), cid, 'notes', '$value')}>${esc(s.notes || '')}</textarea>`
-      : (s.notes
-          ? `<div class="md-view">${renderMarkdown(s.notes)}</div>`
-          : `<div style="color:var(--text-muted);font-size:var(--text-sm)">${esc(t('sheet.notesEmpty'))}</div>`));
+      : `<div class="md-view">${renderMarkdown(s.notes)}</div>`) : '';
 
     return `<div style="display:flex;flex-direction:column;gap:var(--space-5)">
+      ${identity}
       ${abilities}
       <div style="display:flex;flex-wrap:wrap;gap:var(--space-5)">
         <div style="flex:1 1 13rem;min-width:12rem">${saves}</div>
