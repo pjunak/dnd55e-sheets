@@ -141,6 +141,8 @@ export default {
   'spell.addExtra':      'Add spell',
   'spell.copySpell':     'Copy into spellbook',
   'spell.copied':        'Copied from another spellbook',
+  'spell.grantChoicesHdr': 'Granted spell choices',
+  'spell.chooseGrant':   '{src}: choose {n} ({what})',
 
   // ── Builder (rules-engine guided progression — appears when installed) ──
   'builder.soon':        'The guided Builder appears here when the rules engine and compendium addons are installed.',

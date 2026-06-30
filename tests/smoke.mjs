@@ -115,6 +115,7 @@ const RICH_ENGINE = {
         perClass: [{ classId: 'wizard', ability: 'INT', prepares: 'list', ritual: false, saveDC: 13, spellAttack: 5, preparedLimit: 3, cantripsKnown: 2 }],
         slots: [4, 3, 2], casterLevel: 5,
         granted: [{ ref: 'bless', name: 'Bless', level: 1, school: 'Enchantment', source: { type: 'subclass', id: 'life-domain' }, alwaysPrepared: true }],
+        pendingChoices: [{ key: 'feat:magic-initiate:mi-cantrips', source: { type: 'feat', id: 'magic-initiate' }, choose: 2, spellLevel: 0, from: { class: ['wizard'] }, alwaysPrepared: true, picked: [] }],
       },
     },
     warnings: [],
@@ -225,6 +226,23 @@ test('sheets: Spellbook separates granted from picks + colours forced duplicates
     assert.match(out.html, /draggable="true"/, 'draggable spell cards');
     assert.match(out.html, /data-on-drop=/, 'drop zones for preparation');
   } finally { delete globalThis.localStorage; }
+});
+
+test('sheets: choose-grant picker renders a filtered pool + pick/unpick actions', () => {
+  globalThis.localStorage = { getItem: () => 'spellbook', setItem() {} };
+  try {
+    const { rec } = dryRunRegister(register, META, { deps: { 'dnd55e-core-rules': RICH_ENGINE } });
+    const section = rec.articleSections.find((s) => s.kind === 'characters');
+    const out = section.fn({ id: 'cmi', name: 'Mage', addonData: { 'dnd55e-sheets': { className: 'Wizard' } } });
+    assert.match(out.html, /Granted spell choices/, 'choices section header');
+    assert.match(out.html, /Magic Initiate/, 'shows the grant source + count');
+    assert.match(out.html, /<option value="fire-bolt">/, 'picker offers the matching level-0 wizard cantrip');
+    assert.doesNotMatch(out.html, /<option value="fireball"/, 'a non-matching (level-3) spell is NOT an option in the cantrip picker');
+  } finally { delete globalThis.localStorage; }
+  const { rec } = dryRunRegister(register, META, { deps: { 'dnd55e-core-rules': RICH_ENGINE } });
+  const act = (name, ...args) => rec.actions.find((a) => a.name === name).fn(...args);
+  assert.doesNotThrow(() => act('grantPick', 'c1', 'feat:magic-initiate:mi-cantrips', 'fire-bolt'));
+  assert.doesNotThrow(() => act('grantUnpick', 'c1', 'feat:magic-initiate:mi-cantrips', 'fire-bolt'));
 });
 
 test('sheets: spellbook prepare/cantrip/copy + drag-drop actions do not throw', () => {

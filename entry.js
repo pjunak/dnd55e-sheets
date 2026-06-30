@@ -73,6 +73,7 @@ export default function register(host) {
     spells: [],      // manual/extra + copied spell entries [{id,name,level,school,origin}] (SP-1/SP-15)
     preparedSpells: {}, // engine mode: { <classId>: [spellRef,…] } prepared picks (SP-2)
     cantrips: {},       // engine mode: { <classId>: [spellRef,…] } cantrip picks (SP-7)
+    grantChoices: {},   // engine mode: { '<src>:<id>:<grantId>': [spellRef,…] } resolved choose-grants (SP-10)
     inventory: [],   // [{id, name, qty, location, notes}]
     currency: { pp: 0, gp: 0, ep: 0, sp: 0, cp: 0 },
     overrides: {},   // engine-mode manual overrides (ARCH-3)
@@ -104,6 +105,7 @@ export default function register(host) {
       spells:    Array.isArray(s.spells) ? s.spells : [],
       preparedSpells: { ...(s.preparedSpells || {}) },
       cantrips:  { ...(s.cantrips || {}) },
+      grantChoices: { ...(s.grantChoices || {}) },
       inventory: Array.isArray(s.inventory) ? s.inventory : [],
       baseStats: s.baseStats || null,
       classes:   Array.isArray(s.classes) ? s.classes : [],
@@ -479,6 +481,8 @@ export default function register(host) {
     const alwaysSet = new Set(granted.filter((g) => g.alwaysPrepared).map((g) => g.ref));
     const blocks = [spellcastingSummary(s, comp)];
     for (const p of (sc.perClass || [])) blocks.push(classSpellSection(c, s, p, comp, engine, editable, alwaysSet));
+    const pending = sc.pendingChoices || [];
+    if (pending.length) blocks.push(grantChoicesSection(c, s, pending, engine, editable));
     if (granted.length) blocks.push(grantedSection(granted));
     blocks.push(extraSection(c, s, editable, granted));
 
@@ -607,6 +611,40 @@ export default function register(host) {
       return spellChip(g.name, sub, { locked: g.alwaysPrepared, badge: BADGE[src] || '•', badgeTitle: titleize((g.source && g.source.id) || src), title: t('spell.grantedBy', { src: titleize((g.source && g.source.id) || src) }) });
     }).join('');
     return `<div>${subLabel(t('spell.alwaysPreparedHdr'))}<div style="display:flex;flex-wrap:wrap;gap:var(--space-1)">${chips}</div></div>`;
+  }
+
+  // Choose-grants (SP-10/SP-20): a feat/lineage that grants "pick N spells matching
+  // a filter" (Magic Initiate, Fey Touched's choose-1, High Elf's wizard cantrip).
+  // Renders the picked chips + a filtered <select> to add more, capped at `choose`.
+  // Picks persist in s.grantChoices[key]; the engine grants them. Pool filtered by
+  // spell level + class/school (best-effort — many spells lack class tags, so a
+  // school filter reads fuller than a class filter).
+  function grantChoicesSection(c, s, pending, engine, editable) {
+    const blocks = pending.map((pc) => {
+      const picked = (s.grantChoices && s.grantChoices[pc.key]) || [];
+      const chips = picked.map((ref) => {
+        const info = spellInfo(engine, ref);
+        return spellChip(info.name, lvlLabel(info.level), { removeAttr: editable ? dataAction(host.action('grantUnpick'), c.id, pc.key, ref) : null });
+      }).join('');
+      let adder = '';
+      if (editable && picked.length < pc.choose) {
+        const pool = (engine.listSpells ? (engine.listSpells({ level: pc.spellLevel }) || []) : []).filter((sp) => {
+          if (picked.includes(sp.id)) return false;
+          if (pc.from.class && pc.from.class.length) return (sp.classes || []).some((cl) => pc.from.class.includes(cl));
+          if (pc.from.school && pc.from.school.length) return pc.from.school.map((x) => String(x).toLowerCase()).includes(String(sp.school || '').toLowerCase());
+          return true;
+        });
+        adder = pool.length
+          ? `<select class="edit-input" style="max-width:13rem"${dataOn('change', host.action('grantPick'), c.id, pc.key, '$value')}><option value="">${esc(t('builder.choose'))}</option>${pool.map((sp) => `<option value="${esc(sp.id)}">${esc(sp.name)}</option>`).join('')}</select>`
+          : `<span style="color:var(--text-muted);font-size:var(--text-xs)">${esc(t('builder.contentPending'))}</span>`;
+      }
+      const fromLabel = (pc.from.class || pc.from.school || []).map(titleize).join('/');
+      const what = (pc.spellLevel === 0 ? t('spellbook.cantrip') : t('spellbook.lvlN', { n: pc.spellLevel })) + (fromLabel ? ' · ' + fromLabel : '');
+      const label = t('spell.chooseGrant', { src: titleize((pc.source && pc.source.id) || ''), n: pc.choose, what });
+      return `<div>${subLabel(label)}<div style="display:flex;flex-wrap:wrap;gap:var(--space-1);align-items:center">${chips}${adder}</div></div>`;
+    }).join('');
+    return `<div style="background:var(--bg-surface);border:1px solid rgba(var(--gold-muted),.15);border-radius:var(--radius);padding:var(--space-2) var(--space-3);display:flex;flex-direction:column;gap:var(--space-3)">
+      ${subLabel(t('spell.grantChoicesHdr'))}${blocks}</div>`;
   }
 
   // Extra (manual) + copied spells, separate from the granted set (SP-1/SP-15).
@@ -1055,6 +1093,16 @@ export default function register(host) {
     const ref = _dragRef; _dragRef = null;
     if (!ref) return;
     mutate(cid, (s) => { addRef(s, kind === 'cantrip' ? 'cantrips' : 'preparedSpells', classId, ref); return s; });
+  });
+  // Choose-grant picks (Magic Initiate / Fey Touched's choose-1 / lineage cantrip).
+  // Keyed by the engine's grant key (`<src>:<id>:<grantId>`); the engine caps to
+  // the choose count on read, so an extra pick is harmless.
+  host.registerAction('grantPick', (cid, key, ref) => {
+    if (!ref) return;
+    mutate(cid, (s) => { const cur = (s.grantChoices[key] || []).slice(); if (!cur.includes(ref)) cur.push(ref); s.grantChoices = { ...s.grantChoices, [key]: cur }; return s; });
+  });
+  host.registerAction('grantUnpick', (cid, key, ref) => {
+    mutate(cid, (s) => { s.grantChoices = { ...s.grantChoices, [key]: (s.grantChoices[key] || []).filter((r) => r !== ref) }; return s; });
   });
   host.registerAction('spellSet', (cid, sid, field, value) => {
     mutate(cid, (s) => {
