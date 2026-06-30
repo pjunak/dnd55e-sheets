@@ -318,6 +318,39 @@ test('sheets: Backpack add-item + attune actions do not throw', () => {
   assert.doesNotThrow(() => act('invAttune', 'c1', 'someid'));
 });
 
+test('sheets: resource tracker actions mutate without throwing', () => {
+  const { rec } = dryRunRegister(register, META);
+  const act = (name, ...args) => rec.actions.find((a) => a.name === name).fn(...args);
+  assert.doesNotThrow(() => act('resourceAdd', 'c1'));
+  assert.doesNotThrow(() => act('resourceSet', 'c1', 'x', 'name', 'Rage'));
+  assert.doesNotThrow(() => act('resourceSet', 'c1', 'x', 'max', '3'));
+  assert.doesNotThrow(() => act('resourceAdjust', 'c1', 'x', -1));
+  assert.doesNotThrow(() => act('resourceDel', 'c1', 'x'));
+});
+
+test('sheets: Combat tab renders trackers; ± works in view mode (live play)', () => {
+  mockLocalStorage('sheet', null);   // Combat tab, VIEW mode (not modifying)
+  try {
+    const { rec } = dryRunRegister(register, META);
+    const section = rec.articleSections.find((s) => s.kind === 'characters');
+    const out = section.fn({ id: 'ct', name: 'Brn', addonData: { 'dnd55e-sheets': { className: 'Barbarian', resources: [{ id: 'r1', name: 'Rage', current: 2, max: 3 }] } } });
+    assert.match(out.html, /Trackers/, 'trackers section on the Combat tab');
+    assert.match(out.html, /Rage/, 'the tracker is shown');
+    assert.match(out.html, /resourceAdjust/, '± live-play control present in view mode');
+  } finally { clearLocalStorage(); }
+});
+
+test('sheets: proficiency dots are quick-toggles in view mode (standalone)', () => {
+  mockLocalStorage('overview', null);   // Overview, VIEW mode (not modifying)
+  try {
+    const { rec } = dryRunRegister(register, META);
+    const section = rec.articleSections.find((s) => s.kind === 'characters');
+    const out = section.fn({ id: 'pv', name: 'Rgr', addonData: { 'dnd55e-sheets': { className: 'Ranger' } } });
+    assert.match(out.html, /toggleSkill/, 'skill dots toggle without entering modification mode');
+    assert.match(out.html, /toggleSave/, 'save dots toggle without entering modification mode');
+  } finally { clearLocalStorage(); }
+});
+
 test('sheets: no Spellbook tab for a non-caster with no spells (engine mode)', () => {
   const NONCASTER = { ...RICH_ENGINE, hydrate: () => ({ sheet: { derived: {}, abilities: {}, saves: {}, skills: {}, features: [], totalLevel: 1, spellcasting: { perClass: [], slots: [], granted: [] } }, warnings: [] }) };
   const { rec } = dryRunRegister(register, META, { deps: { 'dnd55e-core-rules': NONCASTER } });

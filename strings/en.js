@@ -79,6 +79,17 @@ export default {
   'combat.acSource':  'Armor Class',
   'combat.attunement': 'Attunement',
 
+  // ── Resource trackers (Rage / Ki / slots / hit dice…) ────────────
+  'tracker.title':    'Trackers',
+  'tracker.add':      'Add tracker',
+  'tracker.name':     'Rage, Ki, Slots…',
+  'tracker.max':      'Max',
+  'tracker.empty':    'No trackers yet.',
+  'tracker.hint':     'Count limited resources — Rage, Ki, spell slots, hit dice. ± adjusts during play.',
+  'tracker.minus':    'Spend one',
+  'tracker.plus':     'Regain one',
+  'tracker.reset':    'Reset to full',
+
   // ── Ability full names (abbreviations STR/DEX/… are universal) ────
   'ability.STR':      'Strength',
   'ability.DEX':      'Dexterity',

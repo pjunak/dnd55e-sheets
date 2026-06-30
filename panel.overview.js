@@ -20,7 +20,8 @@ export function makeOverviewPanel(ctx) {
   function panelOverview(c, s, edit, comp, engine) {
     const vm = viewModel(s, comp);
     const cid = c.id;
-    const standaloneEdit = edit && !engine;
+    const standaloneEdit = edit && !engine;     // ability/identity numeric entry — modification mode
+    const profEditable = !engine;               // save/skill dots toggle as a quick action (view too)
 
     // ── Abilities ───────────────────────────────────────────────────
     const abilityCells = ABILITIES.map((a) => {
@@ -41,7 +42,7 @@ export function makeOverviewPanel(ctx) {
     // ── Saving throws ───────────────────────────────────────────────
     const saveRows = ABILITIES.map((a) => {
       const sv = vm.save(a);
-      const dotAttr = standaloneEdit ? dataAction(host.action('toggleSave'), cid, a) : null;
+      const dotAttr = profEditable ? dataAction(host.action('toggleSave'), cid, a) : null;
       return profRow(sv.exp ? 'exp' : sv.prof ? 'prof' : 'none', esc(t('ability.' + a)), signed(sv.total), { dotAttr });
     }).join('');
     const saves = section(t('sheet.saves'), saveRows);
@@ -52,7 +53,7 @@ export function makeOverviewPanel(ctx) {
       .sort((x, y) => x.name.localeCompare(y.name))
       .map(({ sk, name }) => {
         const sv = vm.skill(sk.id, sk.ability);
-        const dotAttr = standaloneEdit ? dataAction(host.action('toggleSkill'), cid, sk.id) : null;
+        const dotAttr = profEditable ? dataAction(host.action('toggleSkill'), cid, sk.id) : null;
         const label = `${esc(name)} <span style="color:var(--text-muted);font-size:var(--text-xs);text-transform:uppercase;letter-spacing:.03em">${esc(sk.ability)}</span>`;
         return profRow(sv.exp ? 'exp' : sv.prof ? 'prof' : 'none', label, signed(sv.total), { dotAttr });
       }).join('');

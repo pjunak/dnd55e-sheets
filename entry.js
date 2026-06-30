@@ -378,6 +378,32 @@ export default function register(host) {
     mutate(cid, (s) => { s.inventory = s.inventory.map((it) => (it.id === iid ? { ...it, attuned: !it.attuned } : it)); return s; });
   });
 
+  // ── Resource trackers (Rage / Ki / slots / hit dice…). Manual, work in both
+  //    modes: ± is a live-play action (view), add/rename/set-max is modification.
+  //    Clamp current into [0, max] when max>0, else just floor at 0. ──
+  const clampRes = (cur, max) => (num(max, 0) > 0 ? Math.max(0, Math.min(num(max, 0), num(cur, 0))) : Math.max(0, num(cur, 0)));
+  host.registerAction('resourceAdd', (cid) => {
+    mutate(cid, (s) => { s.resources = s.resources.concat([{ id: uid('res'), name: '', current: 0, max: 0 }]); return s; });
+  });
+  host.registerAction('resourceDel', (cid, rid) => {
+    mutate(cid, (s) => { s.resources = s.resources.filter((r) => r.id !== rid); return s; });
+  });
+  host.registerAction('resourceAdjust', (cid, rid, delta) => {
+    mutate(cid, (s) => { s.resources = s.resources.map((r) => (r.id === rid ? { ...r, current: clampRes(num(r.current, 0) + Number(delta), r.max) } : r)); return s; });
+  });
+  host.registerAction('resourceSet', (cid, rid, field, value) => {
+    mutate(cid, (s) => {
+      s.resources = s.resources.map((r) => {
+        if (r.id !== rid) return r;
+        if (field === 'name') return { ...r, name: String(value) };
+        if (field === 'max') { const max = Math.max(0, num(value, 0)); return { ...r, max, current: clampRes(r.current, max) }; }
+        if (field === 'current') return { ...r, current: clampRes(value, r.max) };
+        return r;
+      });
+      return s;
+    });
+  });
+
   // ── Builder (engine mode) — edit the rich decision model + materialize ────
   const { builderMutate } = ctx.engine;
   const parseAssign = (str) => { const a = {}; String(str || '').split(',').forEach((p) => { const [k, v] = p.split(':'); if (k && v) a[k.trim()] = num(v); }); return a; };
