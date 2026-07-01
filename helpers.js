@@ -29,6 +29,13 @@ export const abilityMod = (score) => Math.floor((num(score, 10) - 10) / 2);
 export const signed = (n) => (n >= 0 ? '+' + n : String(n));
 export const titleize = (id) => String(id || '').replace(/[-_:]/g, ' ').replace(/\b\w/g, (ch) => ch.toUpperCase());
 
+// D&D 2024 standard point buy — 27 points; each BASE score 8–15; the cost per
+// point rises past 13. `pointCost` clamps out-of-range scores into [8,15] for
+// costing; `pointsSpent` totals a {STR..CHA} base map.
+export const POINT_BUY = { budget: 27, min: 8, max: 15, cost: { 8: 0, 9: 1, 10: 2, 11: 3, 12: 4, 13: 5, 14: 7, 15: 9 } };
+export const pointCost = (v) => POINT_BUY.cost[Math.max(POINT_BUY.min, Math.min(POINT_BUY.max, num(v, POINT_BUY.min)))] || 0;
+export const pointsSpent = (base) => ABILITIES.reduce((sum, a) => sum + pointCost(base && base[a]), 0);
+
 /** HP clamp — one rule for all sites. With a max>0, clamp into [0, max];
  *  with no max set (0), only floor at 0 (the ± action stays usable). */
 export const clampHp = (hp, maxHp) => {
@@ -63,6 +70,7 @@ export const blank = () => ({
   //    the DEG-1 fallback: each Builder edit materializes the computed sheet
   //    INTO them, so removing the engine degrades to a hand-filled sheet. ──
   baseStats: null,        // {STR..CHA} base scores before ASIs; null → migrate from `abilities`
+  manualScores: false,    // Builder: false → point buy (27 pts, 8–15); true → free manual entry
   classes: [],            // ordered [{classId, level, subclass}] (MC-1)
   lineage: '',            // species sub-choice id (SB-3)
   abilityGrants: [],      // [{id, source, assign:{STR:+2,…}}] background ASI / half-feats (AB-1)

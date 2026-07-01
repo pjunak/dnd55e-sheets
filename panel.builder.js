@@ -9,7 +9,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 export function makeBuilderPanel(ctx) {
-  const { host, t, ABILITIES, SKILLS, num, signed, abilityMod, titleize, ui, engine: E } = ctx;
+  const { host, t, ABILITIES, SKILLS, num, signed, abilityMod, titleize, ui, engine: E, POINT_BUY, pointCost, pointsSpent } = ctx;
   const { esc, dataAction, dataOn } = host.h;
   const { section, miniStat, selectBox, fieldRow, choiceBlock, warningsBlock, numField } = ui;
   const { builderModel, collectChoices } = E;
@@ -40,7 +40,7 @@ export function makeBuilderPanel(ctx) {
       <div style="display:flex;flex-direction:column;gap:var(--space-5)">
         ${warningsBlock(warnings)}
         <div style="display:flex;flex-wrap:wrap;gap:var(--space-2)">${summary}</div>
-        ${builderAbilities(c, base, comp, ro)}
+        ${builderAbilities(c, s, base, comp, ro)}
         ${builderIdentity(c, s, engine, ro)}
         ${builderClasses(c, classes, engine, ro)}
         ${builderChoices(c, s, classes, engine, comp, ro)}
@@ -52,24 +52,56 @@ export function makeBuilderPanel(ctx) {
     return `<div style="color:var(--text-muted);font-size:var(--text-sm)">${esc(t('builder.soon'))}</div>`;
   }
 
-  // Base ability scores → final (base + grants) preview.
-  function builderAbilities(c, base, comp, ro) {
-    const cells = ABILITIES.map((a) => {
-      const b = num(base[a], 10);
+  // Ability scores — point buy by default (27 pts, each base 8–15), or free
+  // manual entry when the box is ticked. Either way this sets only the BASE
+  // scores; the engine adds species / background / feat increases on top.
+  function builderAbilities(c, s, base, comp, ro) {
+    const manual = !!s.manualScores;
+    const toggle = ro ? '' : `<label style="display:inline-flex;align-items:center;gap:6px;font-size:var(--text-xs);color:var(--text-muted);cursor:pointer">
+      <input type="checkbox" style="accent-color:var(--accent-gold);cursor:pointer"${manual ? ' checked' : ''}${dataOn('change', host.action('builderToggleManual'), c.id)}> ${esc(t('builder.manualScores'))}</label>`;
+
+    // base + grants → final score preview, shared by both modes.
+    const finPreview = (a, b) => {
       const fin = comp && comp.abilities && comp.abilities[a] ? num(comp.abilities[a].score, b) : b;
       const bonus = fin - b;
-      const input = ro
+      return `<div style="font-size:var(--text-xs);color:var(--text-muted);margin-top:var(--space-1)">→ <strong style="color:var(--text-parchment)">${esc(String(fin))}</strong> ${esc(signed(abilityMod(fin)))}${bonus ? ` <span style="color:var(--color-success)">${esc(signed(bonus))}</span>` : ''}</div>`;
+    };
+    const tile = (a, controlHtml, b) => `<div style="text-align:center;background:var(--bg-raised);border-radius:var(--radius);padding:var(--space-2)">
+      <div style="font-size:var(--text-xs);color:var(--text-muted)">${esc(a)}</div>${controlHtml}${finPreview(a, b)}</div>`;
+
+    if (manual) {
+      const cells = ABILITIES.map((a) => {
+        const b = num(base[a], 10);
+        const ctrl = ro
+          ? `<div style="color:var(--text-parchment);font-weight:700;font-size:var(--text-lg)">${esc(String(b))}</div>`
+          : numField(dataOn('change', host.action('builderAbility'), c.id, a, '$value'), b, { min: 1, max: 30, ariaLabel: a });
+        return tile(a, ctrl, b);
+      }).join('');
+      return section(t('builder.abilities'),
+        `<div style="color:var(--text-muted);font-size:var(--text-xs);margin-bottom:var(--space-2)">${esc(t('builder.baseHint'))}</div>
+         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(4.5rem,1fr));gap:var(--space-2)">${cells}</div>`,
+        { right: toggle });
+    }
+
+    // ── Point buy ──
+    const spent = pointsSpent(base);
+    const remaining = POINT_BUY.budget - spent;
+    const remColor = remaining < 0 ? 'var(--color-danger)' : remaining === 0 ? 'var(--text-muted)' : 'var(--accent-gold)';
+    const budget = `<span style="font-size:var(--text-xs);font-weight:600;color:${remColor};font-variant-numeric:tabular-nums">${esc(t('builder.pointsLeft', { n: remaining }))}</span>`;
+    const cells = ABILITIES.map((a) => {
+      const b = Math.max(POINT_BUY.min, Math.min(POINT_BUY.max, num(base[a], POINT_BUY.min)));
+      const canDec = !ro && b > POINT_BUY.min;
+      const canInc = !ro && b < POINT_BUY.max && (spent - pointCost(b) + pointCost(b + 1)) <= POINT_BUY.budget;
+      const stepBtn = (dir, sym, on, title) => `<button class="inline-create-btn" title="${esc(title)}" style="min-width:1.9rem;padding:var(--space-1) var(--space-2);opacity:${on ? '1' : '.35'}"${on ? '' : ' disabled'}${on ? dataAction(host.action('builderAbilityStep'), c.id, a, dir) : ''}>${sym}</button>`;
+      const ctrl = ro
         ? `<div style="color:var(--text-parchment);font-weight:700;font-size:var(--text-lg)">${esc(String(b))}</div>`
-        : numField(dataOn('change', host.action('builderAbility'), c.id, a, '$value'), b, { min: 1, max: 30, ariaLabel: a });
-      return `<div style="text-align:center;background:var(--bg-raised);border-radius:var(--radius);padding:var(--space-2)">
-        <div style="font-size:var(--text-xs);color:var(--text-muted)">${esc(a)}</div>
-        ${input}
-        <div style="font-size:var(--text-xs);color:var(--text-muted);margin-top:var(--space-1)">→ <strong style="color:var(--text-parchment)">${esc(String(fin))}</strong> ${esc(signed(abilityMod(fin)))}${bonus ? ` <span style="color:var(--color-success)">${esc(signed(bonus))}</span>` : ''}</div>
-      </div>`;
+        : `<div style="display:flex;align-items:center;justify-content:center;gap:var(--space-1)">${stepBtn(-1, '−', canDec, t('tracker.minus'))}<strong style="color:var(--text-parchment);font-size:var(--text-lg);min-width:1.5rem;text-align:center;font-variant-numeric:tabular-nums">${esc(String(b))}</strong>${stepBtn(1, '＋', canInc, t('tracker.plus'))}</div>`;
+      return tile(a, ctrl, b);
     }).join('');
     return section(t('builder.abilities'),
-      `<div style="color:var(--text-muted);font-size:var(--text-xs);margin-bottom:var(--space-2)">${esc(t('builder.baseHint'))}</div>
-       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(4rem,1fr));gap:var(--space-2)">${cells}</div>`);
+      `<div style="color:var(--text-muted);font-size:var(--text-xs);margin-bottom:var(--space-2)">${esc(t('builder.pointBuyHint'))}</div>
+       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(5.5rem,1fr));gap:var(--space-2)">${cells}</div>`,
+      { right: `${budget}${toggle}` });
   }
 
   // Identity: species (+lineage), background, alignment, player.

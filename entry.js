@@ -47,6 +47,7 @@ import { t } from './i18n.js';
 import {
   ABILITIES, COINS, LOCATIONS, SKILLS,
   num, abilityMod, signed, titleize, clampHp, blank, makeHelpers,
+  POINT_BUY, pointCost, pointsSpent,
 } from './helpers.js';
 import { makeEngine } from './engine.js';
 import { makeUI } from './ui.js';
@@ -69,6 +70,7 @@ export default function register(host) {
     host, t, NS,
     ABILITIES, COINS, LOCATIONS, SKILLS,
     num, abilityMod, signed, titleize, clampHp, blank, uid, sheetOf,
+    POINT_BUY, pointCost, pointsSpent,
   };
   ctx.engine = makeEngine(ctx);
   ctx.viewModel = ctx.engine.viewModel;     // hot path — promote for panel destructuring
@@ -500,6 +502,33 @@ export default function register(host) {
   });
   host.registerAction('builderAbility', (cid, ability, value) => {
     builderMutate(cid, (s) => { s.baseStats = { ...(s.baseStats || {}), [ability]: Math.max(1, Math.min(30, num(value, 10))) }; });
+  });
+  // Toggle point-buy ↔ manual base scores. Leaving manual (→ point buy) clamps
+  // each base into the 8–15 point-buy range so the pool math stays valid.
+  host.registerAction('builderToggleManual', (cid) => {
+    builderMutate(cid, (s) => {
+      const on = !s.manualScores;
+      s.manualScores = on;
+      if (!on) {
+        const base = { ...(s.baseStats || {}) };
+        for (const a of ABILITIES) base[a] = Math.max(POINT_BUY.min, Math.min(POINT_BUY.max, num(base[a], POINT_BUY.min)));
+        s.baseStats = base;
+      }
+    });
+  });
+  // Point-buy ±1 on one ability — bounded to 8–15 and refused if an increase
+  // would overspend the 27-point budget (decreases always allowed).
+  host.registerAction('builderAbilityStep', (cid, ability, dir) => {
+    if (ABILITIES.indexOf(ability) < 0) return;
+    builderMutate(cid, (s) => {
+      const base = { ...(s.baseStats || {}) };
+      const cur = Math.max(POINT_BUY.min, Math.min(POINT_BUY.max, num(base[ability], POINT_BUY.min)));
+      const next = cur + Number(dir);
+      if (next < POINT_BUY.min || next > POINT_BUY.max) return;
+      if (Number(dir) > 0 && (pointsSpent(base) - pointCost(cur) + pointCost(next)) > POINT_BUY.budget) return;
+      base[ability] = next;
+      s.baseStats = base;
+    });
   });
   host.registerAction('builderClassSet', (cid, idx, classId) => {
     builderMutate(cid, (s) => { if (s.classes[idx]) { s.classes[idx] = { ...s.classes[idx], classId: String(classId), subclass: '' }; } });
