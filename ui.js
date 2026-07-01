@@ -186,19 +186,13 @@ export function makeUI(ctx) {
       ${badge}<div style="flex:1"><div style="color:${color};font-size:var(--text-sm)">${esc(name)}</div>${sub ? `<div style="color:var(--text-muted);font-size:var(--text-xs)">${esc(sub)}</div>` : ''}</div>${right}</div>`;
   }
 
-  // A subtle "auto-calculated by the rules engine" banner + any engine warnings.
-  // Renders nothing in standalone (vm.auto false).
-  function engineBanner(vm, warnings) {
-    if (!vm || !vm.auto) return '';
-    const warns = (warnings || []).slice(0, 4);
-    const warnHtml = warns.length
-      ? `<div style="margin-top:var(--space-1);color:var(--color-danger);font-size:var(--text-xs)">${warns.map((w) => '⚠ ' + esc(String(w))).join('<br>')}</div>`
-      : '';
-    return `
-      <div style="background:rgba(var(--accent-gold-rgb),.06);border:1px solid rgba(var(--gold-muted),.18);border-radius:var(--radius);padding:var(--space-1) var(--space-3);color:var(--text-muted);font-size:var(--text-xs)">
-        ✨ ${esc(t('engine.auto'))}
-        ${warnHtml}
-      </div>`;
+  // Engine validation warnings (⚠) — shown in the Builder only. There is no
+  // "auto-calculated by the engine" note anywhere; the computed values speak for
+  // themselves. Renders nothing when there are no warnings.
+  function warningsBlock(warnings) {
+    const warns = (warnings || []).slice(0, 6);
+    if (!warns.length) return '';
+    return `<div style="background:rgba(var(--color-danger-bd),.08);border:1px solid var(--color-danger-bd);border-radius:var(--radius);padding:var(--space-2) var(--space-3);color:var(--color-danger);font-size:var(--text-xs);line-height:1.6">${warns.map((w) => '⚠ ' + esc(String(w))).join('<br>')}</div>`;
   }
 
   // Combat attacks from equipped/ready weapons (engine-computed, EQ-5). Renders
@@ -224,6 +218,6 @@ export function makeUI(ctx) {
     S, section, card, sectionLabel, subLabel,
     heroTile, abilityTile, profDot, profRow, rowLine, overrideControls,
     statBox, miniStat,
-    selectBox, fieldRow, choiceBlock, spellChip, engineBanner, attacksBlock,
+    selectBox, fieldRow, choiceBlock, spellChip, warningsBlock, attacksBlock,
   };
 }

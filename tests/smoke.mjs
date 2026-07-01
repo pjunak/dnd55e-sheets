@@ -322,6 +322,43 @@ test('sheets: Combat tab renders trackers; ± is a live-play control', () => {
   } finally { clearLocalStorage(); }
 });
 
+const RES_ENGINE = { ...RICH_ENGINE, hydrate: () => {
+  const h = RICH_ENGINE.hydrate();
+  h.sheet.derived = { ...h.sheet.derived, maxHp: 40 };
+  h.sheet.abilities = { ...h.sheet.abilities, CON: { mod: 2 } };
+  h.sheet.totalLevel = 5;
+  h.sheet.resources = [
+    { key: 'rage', name: 'Rage', max: 3, kind: 'pool', recharge: [{ on: 'short', amount: 1 }, { on: 'long', amount: 'full' }] },
+    { key: 'hit-dice-d12', name: 'Hit Dice (d12)', max: 5, kind: 'hitdice', die: 'd12', recharge: [{ on: 'long', amount: 'halfLevel' }] },
+  ];
+  return h;
+} };
+
+test('sheets: Combat tab auto-generates trackers + Rest button, with structured recharge', () => {
+  mockLocalStorage('combat');
+  try {
+    const { rec } = dryRunRegister(register, META, { deps: { 'dnd55e-core-rules': RES_ENGINE } });
+    const out = renderBody(rec, { id: 'cr', name: 'Brn', addonData: { 'dnd55e-sheets': { className: 'Barbarian' } } });
+    assert.match(out, /Trackers/, 'trackers section on the Combat tab');
+    assert.match(out, /Rage/, 'engine-built tracker name (from the build)');
+    assert.match(out, /\+1 on short rest/, 'structured recharge label (amount + trigger)');
+    assert.match(out, /full on long rest/, 'structured recharge label (full)');
+    assert.match(out, /resourceUseAdjust/, '± live-play control');
+    assert.match(out, /restOpen/, 'a Rest button');
+    assert.doesNotMatch(out, /Add tracker/, 'no manual add button in engine mode');
+  } finally { clearLocalStorage(); }
+});
+
+test('sheets: rest actions (open / spend hit die / short+long apply / close) do not throw', () => {
+  const { rec } = dryRunRegister(register, META, { deps: { 'dnd55e-core-rules': RES_ENGINE } });
+  const act = (name, ...args) => rec.actions.find((a) => a.name === name).fn(...args);
+  assert.doesNotThrow(() => act('restOpen', 'c1'));
+  assert.doesNotThrow(() => act('restSpendHitDie', 'c1', 'hit-dice-d12'));
+  assert.doesNotThrow(() => act('restApply', 'c1', 'short'));
+  assert.doesNotThrow(() => act('restApply', 'c1', 'long'));
+  assert.doesNotThrow(() => act('restClose', 'c1'));
+});
+
 test('sheets: Backpack offers compendium pickers + attunement counter', () => {
   mockLocalStorage('backpack');
   try {

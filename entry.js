@@ -153,7 +153,7 @@ export default function register(host) {
       else if (active === 'spellbook') panel = panelSpellbook(c, s, editable, comp, engine);
       else if (active === 'builder') panel = panelBuilder(c, s, editable, comp, warnings, engine);
       const vitals = (active !== 'overview' && active !== 'builder')
-        ? vitalsBar(c, s, comp, editable, engine, warnings) : '';
+        ? vitalsBar(c, s, comp, editable, engine) : '';
 
       return `<div class="addon-dnd55e-sheets" style="display:flex;flex-direction:column">${tabBar}
         <div role="tabpanel" id="${esc(pid)}" aria-labelledby="${esc(tabBtnId(c.id, active))}" tabindex="0">${vitals}${panel}</div></div>`;
@@ -372,6 +372,79 @@ export default function register(host) {
         if (field === 'current') return { ...r, current: clampRes(value, r.max) };
         return r;
       });
+      return s;
+    });
+  });
+
+  // ── Engine-built trackers (comp.resources) — the engine owns name/max/recharge;
+  //    we store only the current value per resource key (absent ⇒ full). ──
+  host.registerAction('resourceUseAdjust', (cid, key, delta, max) => {
+    mutate(cid, (s) => {
+      const m = num(max, 0);
+      const uses = { ...(s.resourceUses || {}) };
+      const k = String(key);
+      const cur = Object.prototype.hasOwnProperty.call(uses, k) ? num(uses[k], m) : m;
+      uses[k] = m > 0 ? Math.max(0, Math.min(m, cur + Number(delta))) : Math.max(0, cur + Number(delta));
+      s.resourceUses = uses;
+      return s;
+    });
+  });
+  host.registerAction('resourceUseReset', (cid, key) => {
+    mutate(cid, (s) => { const uses = { ...(s.resourceUses || {}) }; delete uses[String(key)]; s.resourceUses = uses; return s; });
+  });
+
+  // ── Rest wizard (engine mode). Open/close is a UI flag (localStorage). Spending
+  //    a hit die heals avg(die)+CON. A short/long rest regains each resource by its
+  //    engine recharge rules for the triggered rest(s); a long rest also restores
+  //    HP to full, clears temp HP, and regains half total level in hit dice. ──
+  const restKey = (cid) => 'dse-rest:' + cid;
+  const DIE_AVG = { d6: 4, d8: 5, d10: 6, d12: 7 };
+  const hydrateFor = (s) => { const engine = getRules(); const r = engine ? safeHydrate(engine, decisionsOf(s, engine)) : null; return r && r.sheet; };
+  const resCur = (s, r) => (Object.prototype.hasOwnProperty.call(s.resourceUses || {}, r.key) ? num(s.resourceUses[r.key], r.max) : num(r.max, 0));
+
+  host.registerAction('restOpen', (cid) => { try { localStorage.setItem(restKey(cid), 'open'); } catch (_) {} host.ui.rerender(); });
+  host.registerAction('restClose', (cid) => { try { localStorage.removeItem(restKey(cid)); } catch (_) {} host.ui.rerender(); });
+
+  host.registerAction('restSpendHitDie', (cid, dieKey) => {
+    mutate(cid, (s) => {
+      const comp = hydrateFor(s);
+      const r = comp && (comp.resources || []).find((x) => x.key === dieKey && x.kind === 'hitdice');
+      if (!r) return s;
+      const cur = resCur(s, r);
+      if (cur <= 0) return s;
+      s.resourceUses = { ...(s.resourceUses || {}), [dieKey]: cur - 1 };
+      const con = comp.abilities && comp.abilities.CON ? num(comp.abilities.CON.mod, 0) : 0;
+      const heal = Math.max(1, (DIE_AVG[r.die] || 5) + con);
+      const maxHp = comp.derived ? num(comp.derived.maxHp, 0) : num(s.maxHp, 0);
+      s.hp = maxHp > 0 ? Math.min(maxHp, num(s.hp, 0) + heal) : num(s.hp, 0) + heal;
+      return s;
+    });
+  });
+
+  host.registerAction('restApply', (cid, kind) => {
+    const long = String(kind) === 'long';
+    try { localStorage.removeItem(restKey(cid)); } catch (_) {}
+    mutate(cid, (s) => {
+      const comp = hydrateFor(s);
+      const resources = (comp && comp.resources) || [];
+      const totalLevel = comp ? num(comp.totalLevel, num(s.level, 1)) : num(s.level, 1);
+      const maxHp = comp && comp.derived ? num(comp.derived.maxHp, num(s.maxHp, 0)) : num(s.maxHp, 0);
+      const abilMod = (a) => (comp && comp.abilities && comp.abilities[a] ? num(comp.abilities[a].mod, 0) : 0);
+      const uses = { ...(s.resourceUses || {}) };
+      const regain = (r, amount) => {
+        const max = num(r.max, 0);
+        const cur = Object.prototype.hasOwnProperty.call(uses, r.key) ? num(uses[r.key], max) : max;
+        let next = cur;
+        if (amount === 'full') next = max;
+        else if (amount === 'halfLevel') next = Math.min(max, cur + Math.max(1, Math.floor(totalLevel / 2)));
+        else if (amount && typeof amount === 'object' && amount.abilityMod) next = Math.min(max, cur + Math.max(1, abilMod(amount.abilityMod)));
+        else next = Math.min(max, cur + num(amount, 0));
+        if (next >= max) delete uses[r.key]; else uses[r.key] = next;
+      };
+      const triggers = long ? ['short', 'long'] : ['short'];
+      for (const r of resources) for (const rc of r.recharge || []) if (triggers.includes(rc.on)) regain(r, rc.amount);
+      s.resourceUses = uses;
+      if (long) { s.hp = maxHp > 0 ? maxHp : num(s.hp, 0); s.tempHp = 0; }
       return s;
     });
   });

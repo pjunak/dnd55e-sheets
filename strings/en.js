@@ -86,6 +86,22 @@ export default {
   'tracker.minus':    'Spend one',
   'tracker.plus':     'Regain one',
   'tracker.reset':    'Reset to full',
+  'tracker.rechShort': 'short rest',
+  'tracker.rechLong':  'long rest',
+
+  // ── Rest wizard ──────────────────────────────────────────────────
+  'rest.button':      'Rest',
+  'rest.title':       'Take a rest',
+  'rest.hitDiceHint': 'Spend a Hit Die to heal by its average (+ CON). Prefer to roll? Spend it on the Hit Dice tracker and add your roll with HP ±.',
+  'rest.noHitDice':   'No Hit Dice available.',
+  'rest.noneLeft':    'none left',
+  'rest.spendDie':    'Spend {die} · +{heal} HP',
+  'rest.takeShort':   'Short rest',
+  'rest.takeLong':    'Long rest',
+  'rest.longSummary': 'Long rest → HP to full, regain {half} Hit Dice, and every resource resets by its rule.',
+  'rest.amtFull':     'full',
+  'rest.amtHalf':     'half',
+  'rest.rechRule':    '{amt} on {on}',
 
   // ── Ability full names (abbreviations STR/DEX/… are universal) ────
   'ability.STR':      'Strength',
@@ -210,6 +226,7 @@ export default {
   'action.hpMinus':   'Lose 1 HP',
   'action.hpPlus':    'Heal 1 HP',
   'action.remove':    'Remove',
+  'action.cancel':    'Cancel',
   'misc.notSet':      '—',
   'misc.unnamed':     '(unnamed)',
   'misc.unknown':     '(unknown)',

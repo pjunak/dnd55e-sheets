@@ -55,7 +55,8 @@ export const blank = () => ({
   cantrips: {},       // engine mode: { <classId>: [spellRef,…] } cantrip picks (SP-7)
   grantChoices: {},   // engine mode: { '<src>:<id>:<grantId>': [spellRef,…] } resolved choose-grants (SP-10)
   inventory: [],   // [{id, name, qty, location, notes}]
-  resources: [],   // [{id, name, current, max}] manual play trackers — rage/ki/slots/hit dice (FE-3 lite)
+  resources: [],   // [{id, name, current, max}] manual play trackers (standalone / homebrew)
+  resourceUses: {}, // engine mode: { <resourceKey>: current } — spend state for build-derived trackers; max/name/recharge come from the engine
   currency: { pp: 0, gp: 0, ep: 0, sp: 0, cp: 0 },
   overrides: {},   // engine-mode manual overrides (ARCH-3)
   // ── Builder decision model (engine mode). The flat fields above are kept as
@@ -102,6 +103,7 @@ export function makeHelpers(host) {
       grantChoices: { ...(s.grantChoices || {}) },
       inventory: Array.isArray(s.inventory) ? s.inventory : [],
       resources: Array.isArray(s.resources) ? s.resources : [],
+      resourceUses: { ...(s.resourceUses || {}) },
       baseStats: s.baseStats || null,
       classes:   Array.isArray(s.classes) ? s.classes : [],
       abilityGrants: Array.isArray(s.abilityGrants) ? s.abilityGrants : [],

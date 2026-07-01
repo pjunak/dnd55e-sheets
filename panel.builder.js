@@ -11,7 +11,7 @@
 export function makeBuilderPanel(ctx) {
   const { host, t, ABILITIES, SKILLS, num, signed, abilityMod, titleize, ui, engine: E } = ctx;
   const { esc, dataAction, dataOn } = host.h;
-  const { section, miniStat, selectBox, fieldRow, choiceBlock } = ui;
+  const { section, miniStat, selectBox, fieldRow, choiceBlock, warningsBlock } = ui;
   const { builderModel, collectChoices } = E;
 
   // Feature-detect every engine list-method: `(engine.fn ? engine.fn(args) : [])
@@ -38,6 +38,7 @@ export function makeBuilderPanel(ctx) {
 
     return `
       <div style="display:flex;flex-direction:column;gap:var(--space-5)">
+        ${warningsBlock(warnings)}
         <div style="display:flex;flex-wrap:wrap;gap:var(--space-2)">${summary}</div>
         ${builderAbilities(c, base, comp, ro)}
         ${builderIdentity(c, s, engine, ro)}
@@ -78,16 +79,10 @@ export function makeBuilderPanel(ctx) {
     const speciesRec = s.race ? (engine.getItemByName('species', s.race) || engine.getItem('species', s.race)) : null;
     const lineageOpts = (speciesRec && speciesRec.lineages || []).map((l) => ({ value: l.id, label: l.name }));
     const rows = [
-      fieldRow(t('field.player'), ro
-        ? `<span style="color:var(--text-parchment)">${esc(s.player || t('misc.notSet'))}</span>`
-        : `<input class="edit-input" value="${esc(s.player || '')}"${dataOn('change', host.action('builderField'), c.id, 'player', '$value')}>`),
       fieldRow(t('field.race'), selectBox(s.race, speciesOpts, dataOn('change', host.action('builderField'), c.id, 'race', '$value'), t('builder.choose'), ro)),
     ];
     if (lineageOpts.length) rows.push(fieldRow(t('builder.lineage'), selectBox(s.lineage, lineageOpts, dataOn('change', host.action('builderField'), c.id, 'lineage', '$value'), t('builder.choose'), ro)));
     rows.push(fieldRow(t('field.background'), selectBox(s.background, bgOpts, dataOn('change', host.action('builderField'), c.id, 'background', '$value'), t('builder.choose'), ro)));
-    rows.push(fieldRow(t('field.alignment'), ro
-      ? `<span style="color:var(--text-parchment)">${esc(s.alignment || t('misc.notSet'))}</span>`
-      : `<input class="edit-input" value="${esc(s.alignment || '')}"${dataOn('change', host.action('builderField'), c.id, 'alignment', '$value')}>`));
     return section(t('builder.identity'), rows.join(''));
   }
 

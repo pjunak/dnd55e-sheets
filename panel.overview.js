@@ -15,7 +15,7 @@
 
 export function makeOverviewPanel(ctx) {
   const { host, t, ABILITIES, SKILLS, num, signed, abilityMod, ui, viewModel } = ctx;
-  const { esc, renderMarkdown, dataAction, dataOn } = host.h;
+  const { esc, dataAction, dataOn } = host.h;
   const { section, abilityTile, profRow } = ui;
 
   // A labelled free-text / number input that writes a flat field (standalone).
@@ -88,12 +88,6 @@ export function makeOverviewPanel(ctx) {
     const skills = section(t('sheet.skills'),
       `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:0 var(--space-4)">${skillRows}</div>`);
 
-    // ── Notes (mechanical — flavour/lore live in the host's description) ─────
-    const notes = (edit || s.notes) ? section(t('sheet.notes'), edit
-      ? `<textarea class="edit-input" rows="3" style="width:100%;resize:vertical" placeholder="${esc(t('sheet.notesHint'))}"
-          ${dataOn('change', host.action('setField'), cid, 'notes', '$value')}>${esc(s.notes || '')}</textarea>`
-      : `<div class="md-view">${renderMarkdown(s.notes)}</div>`) : '';
-
     return `<div style="display:flex;flex-direction:column;gap:var(--space-5)">
       ${identity}
       ${abilities}
@@ -101,7 +95,6 @@ export function makeOverviewPanel(ctx) {
         <div style="flex:1 1 13rem;min-width:12rem">${saves}</div>
         <div style="flex:2 1 22rem;min-width:16rem">${skills}</div>
       </div>
-      ${notes}
     </div>`;
   }
 
