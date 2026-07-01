@@ -74,9 +74,10 @@ export default function register(host) {
   ctx.viewModel = ctx.engine.viewModel;     // hot path — promote for panel destructuring
   ctx.ui = makeUI(ctx);
   ctx.legends = makeLegends(ctx).legends;   // per-stat hover-legend builders (UX-7)
-  ctx.abilityRail = makeRail(ctx).abilityRail;   // shared vertical ability rail
+  ctx.vitalsBar = makeHeaderPanel(ctx).vitalsBar;   // shared: Character Sheet & Combat place it in their right column
+  ctx.abilityRail = makeRail(ctx).abilityRail;      // shared: the stacked ability cards (left column)
   ctx.panels = {
-    ...makeHeaderPanel(ctx),
+    vitalsBar: ctx.vitalsBar,
     ...makeOverviewPanel(ctx),
     ...makeSheetPanel(ctx),
     ...makeSpellbookPanel(ctx),
@@ -156,7 +157,10 @@ export default function register(host) {
       else if (active === 'backpack') panel = panelBackpack(c, s, editable, comp, engine);
       else if (active === 'spellbook') panel = panelSpellbook(c, s, editable, comp, engine);
       else if (active === 'builder') panel = panelBuilder(c, s, editable, comp, warnings, engine);
-      const vitals = (active !== 'overview' && active !== 'builder')
+      // Backpack & Spellbook keep the vital strip as a full-width band on top.
+      // Character Sheet & Combat place it themselves (in their right column,
+      // beside the ability cards), so entry doesn't add it there.
+      const vitals = (active === 'backpack' || active === 'spellbook')
         ? vitalsBar(c, s, comp, editable, engine) : '';
 
       // Rest wizard — a floating overlay (host `.addon-wizard-overlay` classes),

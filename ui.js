@@ -57,16 +57,14 @@ export function makeUI(ctx) {
       display:flex; justify-content:space-between; gap:var(--space-3); font-size:var(--text-xs) }
     .addon-dnd55e-sheets .dse-pop-total .k { color:var(--text-muted); text-transform:uppercase; letter-spacing:.04em }
     .addon-dnd55e-sheets .dse-pop-total .v { color:var(--accent-gold); font-weight:700; font-variant-numeric:tabular-nums }
-    /* Full-width sheet layout (UX): a vertical ability RAIL in the space the host
-       side-card used to hold, beside the tab's main content. Wraps to a
-       horizontal ability strip above the content on narrow screens. */
+    /* Full-width sheet layout (UX): the ability CARDS (score + integrated save +
+       that ability's skills) stack in a vertical column down the left, from the
+       very top; the tab's other content (vitals bar + attacks/spells/trackers)
+       fills the column to the right. Stacks below on narrow screens. */
     .addon-dnd55e-sheets .dse-cols { display:flex; gap:var(--space-4); align-items:flex-start; flex-wrap:wrap }
-    .addon-dnd55e-sheets .dse-rail { display:flex; flex-direction:column; gap:var(--space-2); flex:0 0 13rem }
-    .addon-dnd55e-sheets .dse-cols-main { flex:1 1 22rem; min-width:0 }
-    @media (max-width:640px){
-      .addon-dnd55e-sheets .dse-rail { flex-direction:row; flex-wrap:wrap; flex-basis:100% }
-      .addon-dnd55e-sheets .dse-rail > * { flex:1 1 7rem }
-    }`;
+    .addon-dnd55e-sheets .dse-cards { display:flex; flex-direction:column; gap:var(--space-3); flex:0 1 20rem; min-width:16rem }
+    .addon-dnd55e-sheets .dse-cols-main { flex:1 1 20rem; min-width:0 }
+    @media (max-width:720px){ .addon-dnd55e-sheets .dse-cards { flex-basis:100% } }`;
   const styleTag = `<style>${STYLE}</style>`;
 
   // ── Hoisted style strings (M8) — tokens only, reused verbatim. ────

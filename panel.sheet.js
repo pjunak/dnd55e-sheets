@@ -12,7 +12,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 export function makeSheetPanel(ctx) {
-  const { host, t, num, signed, titleize, ui, viewModel, legends, abilityRail } = ctx;
+  const { host, t, num, signed, titleize, ui, viewModel, legends, abilityRail, vitalsBar } = ctx;
   const { esc, dataAction, dataOn } = host.h;
   const { section, card, subLabel, attacksBlock, numField, statTip } = ui;
 
@@ -215,9 +215,10 @@ export function makeSheetPanel(ctx) {
     const attacks = engineAttacks
       || section(t('combat.title'), readiedList(c, s), { icon: '⚔️' });
 
-    // Reclaimed left strip → the ability rail (attack/save reference); the rest of
-    // the tab (attacks · castable spells · trackers) fills the main column.
+    // Ability cards stack down the left; the vital strip (shifted here from the
+    // full-width top) leads the right column, above attacks · spells · trackers.
     const main = `<div style="display:flex;flex-direction:column;gap:var(--space-5)">
+      ${vitalsBar(c, s, comp, edit, engine)}
       <div style="color:var(--text-muted);font-size:var(--text-xs)">${esc(t('combat.weaponsHint'))}</div>
       ${attacks}
       ${combatSpells(c, s, comp, engine)}
@@ -225,7 +226,7 @@ export function makeSheetPanel(ctx) {
     </div>`;
 
     return `<div class="dse-cols">
-      <div class="dse-rail">${abilityRail(c, s, comp, edit)}</div>
+      <div class="dse-cards">${abilityRail(c, s, comp, edit)}</div>
       <div class="dse-cols-main">${main}</div>
     </div>`;
   }
