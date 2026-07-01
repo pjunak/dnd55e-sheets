@@ -26,6 +26,17 @@ export function makeRail(ctx) {
     return `<div style="display:flex;align-items:center;gap:var(--space-2);padding:2px var(--space-2)">${dot}<span style="${S.profLabel}">${labelHtml}</span>${total}</div>`;
   }
 
+  // The saving-throw indicator IS the shield: an outline (empty) when not
+  // proficient, filled gold (full) when proficient — replacing the separate
+  // proficiency dot. Inline SVG (not the emoji) so fill/stroke are controllable.
+  // Clickable to toggle proficiency in standalone edit; a static marker otherwise.
+  function saveShield(prof, attr, title) {
+    const path = `<path d="M12 2.4 L19.3 5.3 V11 C19.3 15.8 16 19.6 12 21.5 C8 19.6 4.7 15.8 4.7 11 V5.3 Z" style="fill:${prof ? 'var(--accent-gold)' : 'none'};stroke:${prof ? 'var(--accent-gold)' : 'var(--text-muted)'};stroke-width:1.7;stroke-linejoin:round"/>`;
+    const svg = `<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" style="display:block">${path}</svg>`;
+    if (attr) return `<button class="dse-dot" title="${esc(title)}" aria-pressed="${prof ? 'true' : 'false'}" style="background:none;border:none;cursor:pointer;padding:0;line-height:0"${attr}>${svg}</button>`;
+    return `<span title="${esc(title)}" style="line-height:0">${svg}</span>`;
+  }
+
   function abilityCard(c, s, comp, a, editable, vm, L) {
     const standaloneEdit = editable && !comp;
     const score = comp && comp.abilities && comp.abilities[a] ? num(comp.abilities[a].score, 10) : num(s.abilities[a], 10);
@@ -41,15 +52,16 @@ export function makeRail(ctx) {
     const leftTile = `<div style="flex:none;text-align:center;background:var(--bg-raised);border:1px solid var(--border-subtle);border-radius:var(--radius);padding:var(--space-1) var(--space-2);min-width:3.5rem">
       ${modBig}<div style="margin-top:1px">${scoreCell}</div></div>`;
 
-    // Save integrated onto the ability's title line (🛡 + dot + total).
+    // Save integrated onto the ability's title line: the shield's fill IS the
+    // proficiency (full = proficient, outline = not), then the total.
     const sv = vm.save(a);
-    const saveState = sv.exp ? 'exp' : sv.prof ? 'prof' : 'none';
     const saveDot = standaloneEdit ? dataAction(host.action('toggleSave'), c.id, a) : null;
     const saveTotal = statTip(`<strong style="${S.profTotal}">${esc(signed(sv.total))}</strong>`, L.save(a), { align: 'r' });
+    const saveTitle = t('sheet.saves') + ' · ' + (sv.prof ? t('misc.proficient') : t('misc.notProficient'));
+    const saveLabel = `<span style="display:inline-flex;align-items:center;gap:4px;font-size:var(--text-xs);color:var(--accent-gold)">${saveShield(sv.prof, saveDot, saveTitle)}${esc(t('sheet.saveTag'))}</span>`;
     const titleRow = `<div style="display:flex;align-items:center;gap:var(--space-2);padding-bottom:var(--space-1);border-bottom:1px solid var(--border-subtle);margin-bottom:var(--space-1)">
       <span style="color:var(--text-parchment);font-weight:600;font-size:var(--text-sm);letter-spacing:.03em;flex:1">${esc(t('ability.' + a))}</span>
-      <span title="${esc(t('sheet.saves'))}" style="color:var(--accent-gold);font-size:var(--text-xs)">🛡 ${esc(t('sheet.saveTag'))}</span>
-      ${profDot(saveState, saveDot)}${saveTotal}</div>`;
+      ${saveLabel}${saveTotal}</div>`;
 
     // Skills governed by this ability (alphabetical), beneath the title.
     const skillsFor = SKILLS.filter((sk) => sk.ability === a)
