@@ -19,10 +19,11 @@ export function makeRail(ctx) {
   const { card, statTip, numField, profDot, S } = ui;
 
   // One save/skill line: trained dot + label + total (total carries a legend).
+  // Tight vertical padding keeps the stacked cards compact.
   function line(state, labelHtml, legend, dotAttr) {
     const dot = profDot(state, dotAttr);
     const total = statTip(`<strong style="${S.profTotal}">${esc(legend.total)}</strong>`, legend, { align: 'r' });
-    return `<div style="display:flex;align-items:center;gap:var(--space-2);padding:var(--space-1) var(--space-2)">${dot}<span style="${S.profLabel}">${labelHtml}</span>${total}</div>`;
+    return `<div style="display:flex;align-items:center;gap:var(--space-2);padding:2px var(--space-2)">${dot}<span style="${S.profLabel}">${labelHtml}</span>${total}</div>`;
   }
 
   function abilityCard(c, s, comp, a, editable, vm, L) {
@@ -34,9 +35,11 @@ export function makeRail(ctx) {
     const scoreCell = standaloneEdit
       ? numField(host.h.dataOn('change', host.action('setAbility'), c.id, a, '$value'), score, { min: 1, max: 30, width: '2.75rem', ariaLabel: t('ability.' + a) })
       : `<div style="${S.abilScore}">${esc(String(score))}</div>`;
+    // Compact mod/score tile — the ability's name in the title row identifies it,
+    // so the abbreviation is dropped to save vertical height.
     const modBig = statTip(`<div style="${S.abilMod}">${esc(signed(mod))}</div>`, L.ability(a), { align: 'l' });
-    const leftTile = `<div style="flex:none;text-align:center;background:var(--bg-raised);border:1px solid var(--border-subtle);border-radius:var(--radius);padding:var(--space-2);min-width:4.25rem">
-      <div style="${S.abilAbbr}">${esc(a)}</div>${modBig}<div style="margin-top:var(--space-1)">${scoreCell}</div></div>`;
+    const leftTile = `<div style="flex:none;text-align:center;background:var(--bg-raised);border:1px solid var(--border-subtle);border-radius:var(--radius);padding:var(--space-1) var(--space-2);min-width:3.5rem">
+      ${modBig}<div style="margin-top:1px">${scoreCell}</div></div>`;
 
     // Save integrated onto the ability's title line (🛡 + dot + total).
     const sv = vm.save(a);
@@ -61,8 +64,8 @@ export function makeRail(ctx) {
         }).join('')
       : `<div style="color:var(--text-muted);font-size:var(--text-xs);padding:var(--space-1) var(--space-2)">${esc(t('sheet.noSkills'))}</div>`;
 
-    return card(`<div style="display:flex;gap:var(--space-3);align-items:flex-start">
-      ${leftTile}<div style="flex:1;min-width:0">${titleRow}${skillRows}</div></div>`, { style: 'padding:var(--space-3)' });
+    return card(`<div style="display:flex;gap:var(--space-2);align-items:flex-start">
+      ${leftTile}<div style="flex:1;min-width:0">${titleRow}${skillRows}</div></div>`, { style: 'padding:var(--space-2) var(--space-3)' });
   }
 
   // The stacked ability cards. Callers wrap in `.dse-cards`.

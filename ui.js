@@ -62,7 +62,7 @@ export function makeUI(ctx) {
        very top; the tab's other content (vitals bar + attacks/spells/trackers)
        fills the column to the right. Stacks below on narrow screens. */
     .addon-dnd55e-sheets .dse-cols { display:flex; gap:var(--space-4); align-items:flex-start; flex-wrap:wrap }
-    .addon-dnd55e-sheets .dse-cards { display:flex; flex-direction:column; gap:var(--space-3); flex:0 1 20rem; min-width:16rem }
+    .addon-dnd55e-sheets .dse-cards { display:flex; flex-direction:column; gap:var(--space-3); flex:0 1 17rem; min-width:14rem }
     .addon-dnd55e-sheets .dse-cols-main { flex:1 1 20rem; min-width:0 }
     @media (max-width:720px){ .addon-dnd55e-sheets .dse-cards { flex-basis:100% } }`;
   const styleTag = `<style>${STYLE}</style>`;
