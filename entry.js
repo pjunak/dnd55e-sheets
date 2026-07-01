@@ -51,6 +51,7 @@ import {
 import { makeEngine } from './engine.js';
 import { makeUI } from './ui.js';
 import { makeLegends } from './legends.js';
+import { makeRail } from './panel.rail.js';
 import { makeHeaderPanel } from './panel.header.js';
 import { makeOverviewPanel } from './panel.overview.js';
 import { makeSheetPanel } from './panel.sheet.js';
@@ -73,6 +74,7 @@ export default function register(host) {
   ctx.viewModel = ctx.engine.viewModel;     // hot path — promote for panel destructuring
   ctx.ui = makeUI(ctx);
   ctx.legends = makeLegends(ctx).legends;   // per-stat hover-legend builders (UX-7)
+  ctx.abilityRail = makeRail(ctx).abilityRail;   // shared vertical ability rail
   ctx.panels = {
     ...makeHeaderPanel(ctx),
     ...makeOverviewPanel(ctx),
@@ -169,10 +171,14 @@ export default function register(host) {
     },
   });
 
+  // The Overview = the host lore. In full-width mode the host folds its side-card
+  // (portrait + identity + facts) into this html as a floated `.article-sidecard-inbody`
+  // block; `display:flow-root` contains that float so the lore wraps around the
+  // portrait cleanly (magazine-style) without bleeding into the next tab.
   function lorePanel(html) {
     const lore = (typeof html === 'string' && html.trim()) ? html
       : `<div style="color:var(--text-muted);font-size:var(--text-sm)">${esc(t('sheet.notesEmpty'))}</div>`;
-    return `<div>${lore}</div>`;
+    return `<div style="display:flow-root">${lore}</div>`;
   }
 
   // ════════════════════════════════════════════════════════════════
