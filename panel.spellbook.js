@@ -13,7 +13,7 @@
 export function makeSpellbookPanel(ctx) {
   const { host, t, num, signed, titleize, ui } = ctx;
   const { esc, dataAction, dataOn } = host.h;
-  const { section, card, subLabel, spellChip } = ui;
+  const { section, card, subLabel, spellChip, numField } = ui;
 
   // Resolve a spell ref → {name, level, school}. A ref the compendium can't
   // resolve gets a neutral placeholder (not a slug-titleized id) — titleize is
@@ -211,7 +211,7 @@ export function makeSpellbookPanel(ctx) {
         <button class="inline-create-btn" title="${esc(t('action.remove'))}"${dataAction(host.action('spellDel'), c.id, sp.id)}>✕</button>
       </div>
       <div style="display:flex;gap:var(--space-1);align-items:center">
-        <input class="edit-input" type="number" min="0" max="9" style="width:3.5rem" value="${esc(String(lvl))}" title="${esc(t('spellbook.level'))}"${dataOn('change', host.action('spellSet'), c.id, sp.id, 'level', '$value')}>
+        ${numField(dataOn('change', host.action('spellSet'), c.id, sp.id, 'level', '$value'), lvl, { min: 0, max: 9, title: t('spellbook.level') })}
         <input class="edit-input" style="flex:1" value="${esc(sp.school || '')}" placeholder="${esc(t('spellbook.school'))}"${dataOn('change', host.action('spellSet'), c.id, sp.id, 'school', '$value')}>
       </div>
     </div>`;

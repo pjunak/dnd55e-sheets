@@ -11,7 +11,7 @@
 export function makeBackpackPanel(ctx) {
   const { host, t, COINS, LOCATIONS, num, ui } = ctx;
   const { esc, dataAction, dataOn } = host.h;
-  const { section, card } = ui;
+  const { section, card, numField } = ui;
 
   function panelBackpack(c, s, edit, comp, engine) {
     // Add bar (modification mode): compendium pickers + free-text item.
@@ -65,7 +65,7 @@ export function makeBackpackPanel(ctx) {
     return `<div style="display:flex;align-items:center;gap:var(--space-1);padding:var(--space-1) var(--space-2);border-bottom:1px solid var(--border-subtle)">
       <input class="edit-input" style="flex:1;min-width:6rem" value="${esc(it.name || '')}" placeholder="${esc(t('backpack.name'))}"${dataOn('change', host.action('invSet'), c.id, it.id, 'name', '$value')}>
       ${masteryTag}
-      <input class="edit-input" type="number" min="1" style="width:3.5rem" value="${esc(String(num(it.qty, 1)))}" title="${esc(t('backpack.qty'))}"${dataOn('change', host.action('invSet'), c.id, it.id, 'qty', '$value')}>
+      ${numField(dataOn('change', host.action('invSet'), c.id, it.id, 'qty', '$value'), num(it.qty, 1), { min: 1, title: t('backpack.qty') })}
       <button class="inline-create-btn" title="${esc(t('backpack.attune'))}" style="color:${it.attuned ? 'var(--accent-gold)' : 'var(--text-muted)'}"${dataAction(host.action('invAttune'), c.id, it.id)}>${it.attuned ? '✦' : '☆'}</button>
       <button class="inline-create-btn" title="${esc(t('backpack.cycleLoc'))}"${dataAction(host.action('invCycle'), c.id, it.id)}>${esc(t('loc.' + loc + 'Abbr'))}</button>
       <button class="inline-create-btn" title="${esc(t('action.remove'))}"${dataAction(host.action('invDel'), c.id, it.id)}>✕</button>
@@ -76,7 +76,7 @@ export function makeBackpackPanel(ctx) {
     const cells = COINS.map((coin) => {
       const v = num(s.currency[coin], 0);
       const inner = edit
-        ? `<input class="edit-input" type="number" min="0" style="width:4rem;text-align:center" value="${esc(String(v))}"${dataOn('change', host.action('currencySet'), c.id, coin, '$value')}>`
+        ? numField(dataOn('change', host.action('currencySet'), c.id, coin, '$value'), v, { min: 0, ariaLabel: t('coin.' + coin) })
         : `<div style="color:var(--text-parchment);font-weight:600;font-variant-numeric:tabular-nums">${esc(String(v))}</div>`;
       return `<div style="text-align:center;min-width:3rem">
         <div style="font-size:var(--text-xs);color:var(--accent-gold);font-weight:600">${esc(t('coin.' + coin))}</div>${inner}</div>`;

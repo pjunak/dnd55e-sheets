@@ -50,6 +50,7 @@ import {
 } from './helpers.js';
 import { makeEngine } from './engine.js';
 import { makeUI } from './ui.js';
+import { makeLegends } from './legends.js';
 import { makeHeaderPanel } from './panel.header.js';
 import { makeOverviewPanel } from './panel.overview.js';
 import { makeSheetPanel } from './panel.sheet.js';
@@ -71,6 +72,7 @@ export default function register(host) {
   ctx.engine = makeEngine(ctx);
   ctx.viewModel = ctx.engine.viewModel;     // hot path — promote for panel destructuring
   ctx.ui = makeUI(ctx);
+  ctx.legends = makeLegends(ctx).legends;   // per-stat hover-legend builders (UX-7)
   ctx.panels = {
     ...makeHeaderPanel(ctx),
     ...makeOverviewPanel(ctx),
@@ -81,7 +83,7 @@ export default function register(host) {
   };
 
   const { getRules, safeHydrate, decisionsOf, mutate } = ctx.engine;
-  const { vitalsBar, panelOverview, panelSheet, panelSpellbook, panelBackpack, panelBuilder } = ctx.panels;
+  const { vitalsBar, panelOverview, panelSheet, panelSpellbook, panelBackpack, panelBuilder, restModal } = ctx.panels;
 
   // ── Tab model ────────────────────────────────────────────────────
   //  Overview (lore) + the mechanical tabs. Spellbook only when the character has
@@ -155,8 +157,15 @@ export default function register(host) {
       const vitals = (active !== 'overview' && active !== 'builder')
         ? vitalsBar(c, s, comp, editable, engine) : '';
 
-      return `<div class="addon-dnd55e-sheets" style="display:flex;flex-direction:column">${tabBar}
-        <div role="tabpanel" id="${esc(pid)}" aria-labelledby="${esc(tabBtnId(c.id, active))}" tabindex="0">${vitals}${panel}</div></div>`;
+      // Rest wizard — a floating overlay (host `.addon-wizard-overlay` classes),
+      // rendered at the fragment root so it floats over any tab. Open state is a
+      // localStorage flag toggled by restOpen/restClose; engine + editor only.
+      let restOpen = false;
+      try { restOpen = !!(engine && editable && restModal && localStorage.getItem('dse-rest:' + c.id) === 'open'); } catch (_) {}
+      const restOverlay = restOpen ? restModal(c, s, comp) : '';
+
+      return `<div class="addon-dnd55e-sheets" style="display:flex;flex-direction:column">${ctx.ui.styleTag}${tabBar}
+        <div role="tabpanel" id="${esc(pid)}" aria-labelledby="${esc(tabBtnId(c.id, active))}" tabindex="0">${vitals}${panel}</div>${restOverlay}</div>`;
     },
   });
 
@@ -234,13 +243,30 @@ export default function register(host) {
     mutate(cid, (s) => { s.skillProf = { ...s.skillProf, [skillId]: !s.skillProf[skillId] }; return s; });
   });
 
-  // HP +/- → one clamp rule (clampHp): with a max>0 clamp into [0,max], else floor at 0.
-  host.registerAction('hp', (id, delta) => {
-    mutate(id, (s) => {
-      const maxHp = num(s.maxHp, 0);
-      s.hp = clampHp(num(s.hp, maxHp) + Number(delta), maxHp);
-      return s;
-    });
+  // HP change → one rule. Damage (delta<0) is absorbed by Temp HP first (2024
+  // rules), then eats current HP; healing only raises current HP (never temp),
+  // clamped by clampHp (into [0,max] when max>0, else floored at 0).
+  const applyHp = (s, delta) => {
+    let d = Number(delta) || 0;
+    if (d < 0) {
+      const temp = num(s.tempHp, 0);
+      const absorbed = Math.min(temp, -d);
+      if (absorbed > 0) { s.tempHp = temp - absorbed; d += absorbed; }
+    }
+    const maxHp = num(s.maxHp, 0);
+    s.hp = clampHp(num(s.hp, maxHp) + d, maxHp);
+    return s;
+  };
+  host.registerAction('hp', (id, delta) => { mutate(id, (s) => applyHp(s, delta)); });
+
+  // Manual heal/damage by an arbitrary amount typed into the HP amount field
+  // (id `dse-hp-amt-<cid>`) — dir +1 heals, −1 damages. Reads the DOM value at
+  // click time (the field is cleared on the ensuing re-render).
+  host.registerAction('hpApply', (cid, dir) => {
+    let amt = 0;
+    try { const el = document.getElementById('dse-hp-amt-' + cid); amt = Math.abs(num(el && el.value, 0)); if (el) el.value = ''; } catch (_) {}
+    if (!amt) return;
+    mutate(cid, (s) => applyHp(s, (Number(dir) || 0) * amt));
   });
 
   // ── Manual overrides (engine mode, ARCH-3) — a typed value beats the computed

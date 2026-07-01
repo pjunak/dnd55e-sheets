@@ -24,6 +24,41 @@ export function makeUI(ctx) {
   const { host, t, num, signed } = ctx;
   const { esc } = host.h;
 
+  // ── Scoped stylesheet (tokens only) ──────────────────────────────
+  // Addons can't ship global CSS, but a <style> scoped under our own
+  // `.addon-dnd55e-sheets` wrapper is sanctioned (AUTHORING §"bespoke styling
+  // goes in an .addon-<id> wrapper"). It powers the hover-legend popovers
+  // (statTip) — a floating card that explains a stat's meaning, its formula and
+  // how the number was reached. Injected once per render at the fragment root.
+  const STYLE = `
+    .addon-dnd55e-sheets .dse-tip { position:relative; display:inline-flex; align-items:center; gap:var(--space-1); cursor:help; outline:none }
+    .addon-dnd55e-sheets .dse-tip-u { text-decoration:underline dotted rgba(var(--accent-gold-rgb),.55); text-underline-offset:3px; text-decoration-thickness:1px }
+    .addon-dnd55e-sheets .dse-tip:focus-visible { border-radius:var(--radius-sm); box-shadow:0 0 0 2px rgba(var(--accent-gold-rgb),.5) }
+    .addon-dnd55e-sheets .dse-pop {
+      position:absolute; z-index:var(--z-dropdown); top:calc(100% + 6px); left:50%;
+      transform:translateX(-50%) translateY(-4px); width:max-content; max-width:17rem;
+      background:var(--bg-raised); border:1px solid rgba(var(--accent-gold-rgb),.35);
+      border-radius:var(--radius); box-shadow:var(--shadow-lg); padding:var(--space-2) var(--space-3);
+      text-align:left; white-space:normal; opacity:0; visibility:hidden; pointer-events:none;
+      transition:opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out) }
+    .addon-dnd55e-sheets .dse-tip:hover .dse-pop,
+    .addon-dnd55e-sheets .dse-tip:focus-within .dse-pop { opacity:1; visibility:visible; transform:translateX(-50%) translateY(0) }
+    .addon-dnd55e-sheets .dse-tip-l .dse-pop { left:0; transform:translateY(-4px) }
+    .addon-dnd55e-sheets .dse-tip-l:hover .dse-pop, .addon-dnd55e-sheets .dse-tip-l:focus-within .dse-pop { transform:translateY(0) }
+    .addon-dnd55e-sheets .dse-tip-r .dse-pop { left:auto; right:0; transform:translateY(-4px) }
+    .addon-dnd55e-sheets .dse-tip-r:hover .dse-pop, .addon-dnd55e-sheets .dse-tip-r:focus-within .dse-pop { transform:translateY(0) }
+    .addon-dnd55e-sheets .dse-pop-title { font-weight:700; color:var(--text-parchment); font-size:var(--text-sm) }
+    .addon-dnd55e-sheets .dse-pop-desc { color:var(--text-light); font-size:var(--text-xs); line-height:1.5; margin-top:2px }
+    .addon-dnd55e-sheets .dse-pop-formula { color:var(--text-muted); font-size:var(--text-xs); font-style:italic; margin-top:var(--space-1) }
+    .addon-dnd55e-sheets .dse-pop-terms { display:grid; grid-template-columns:1fr auto; gap:1px var(--space-3); margin-top:var(--space-2); font-size:var(--text-xs) }
+    .addon-dnd55e-sheets .dse-pop-terms .k { color:var(--text-muted) }
+    .addon-dnd55e-sheets .dse-pop-terms .v { color:var(--text-light); font-variant-numeric:tabular-nums; text-align:right }
+    .addon-dnd55e-sheets .dse-pop-total { border-top:1px solid var(--border-subtle); margin-top:var(--space-2); padding-top:var(--space-1);
+      display:flex; justify-content:space-between; gap:var(--space-3); font-size:var(--text-xs) }
+    .addon-dnd55e-sheets .dse-pop-total .k { color:var(--text-muted); text-transform:uppercase; letter-spacing:.04em }
+    .addon-dnd55e-sheets .dse-pop-total .v { color:var(--accent-gold); font-weight:700; font-variant-numeric:tabular-nums }`;
+  const styleTag = `<style>${STYLE}</style>`;
+
   // ── Hoisted style strings (M8) — tokens only, reused verbatim. ────
   const S = {
     // Layout
@@ -130,14 +165,62 @@ export function makeUI(ctx) {
     return profRow(exp ? 'exp' : prof ? 'prof' : 'none', labelHtml, totalText);
   }
 
+  // ── Themed numeric field — a −/＋ stepper (host `.codex-stepper`) flanking a
+  //    number <input>. The host hides the native spin-buttons app-wide and steps
+  //    the input on button click (see edit.css / app.js), so every number entry
+  //    on the sheet is on-theme and click-friendly. `changeAttr` is a
+  //    host.h.dataOn('change', …) string; `value` the current value. ──
+  function numField(changeAttr, value, opts) {
+    opts = opts || {};
+    const a = [
+      'class="edit-input"', 'type="number"', 'inputmode="numeric"',
+      opts.min != null ? `min="${num(opts.min)}"` : '',
+      opts.max != null ? `max="${num(opts.max)}"` : '',
+      `step="${opts.step != null ? num(opts.step) : 1}"`,
+      opts.title ? `title="${esc(opts.title)}"` : '',
+      opts.ariaLabel ? `aria-label="${esc(opts.ariaLabel)}"` : '',
+      opts.placeholder != null ? `placeholder="${esc(String(opts.placeholder))}"` : '',
+      `value="${esc(String(value == null ? '' : value))}"`,
+      opts.width ? `style="width:${opts.width}"` : '',
+      changeAttr || '',
+    ].filter(Boolean).join(' ');
+    return `<span class="codex-stepper"${opts.wrapStyle ? ` style="${esc(opts.wrapStyle)}"` : ''}>`
+      + `<button type="button" class="codex-stepper-btn" data-num-step="-1" tabindex="-1" aria-hidden="true">−</button>`
+      + `<input ${a}>`
+      + `<button type="button" class="codex-stepper-btn" data-num-step="1" tabindex="-1" aria-hidden="true">＋</button>`
+      + `</span>`;
+  }
+
+  // ── Hover/focus legend for a stat (UX-7). The trigger stays inline; a floating
+  //    card (CSS in STYLE) explains what the stat IS, its formula, and the terms
+  //    that sum to the value — "how the system arrived at the number". `legend` =
+  //    {title, desc?, formula?, terms?:[{label,value}], total?, totalLabel?, aria?}.
+  //    `opts.align` ∈ l|r biases the popover off a container edge; `opts.underline`
+  //    adds the dotted "has-info" affordance. Renders the trigger bare if no legend. ──
+  function statTip(triggerHtml, legend, opts) {
+    opts = opts || {};
+    if (!legend) return triggerHtml;
+    const align = opts.align === 'l' ? ' dse-tip-l' : opts.align === 'r' ? ' dse-tip-r' : '';
+    const inner = opts.underline ? `<span class="dse-tip-u">${triggerHtml}</span>` : triggerHtml;
+    const desc = legend.desc ? `<div class="dse-pop-desc">${esc(legend.desc)}</div>` : '';
+    const formula = legend.formula ? `<div class="dse-pop-formula">${esc(legend.formula)}</div>` : '';
+    const terms = (legend.terms && legend.terms.length)
+      ? `<div class="dse-pop-terms">${legend.terms.map((tm) => `<span class="k">${esc(tm.label)}</span><span class="v">${esc(String(tm.value))}</span>`).join('')}</div>`
+      : '';
+    const total = (legend.total != null)
+      ? `<div class="dse-pop-total"><span class="k">${esc(legend.totalLabel || t('legend.total'))}</span><span class="v">${esc(String(legend.total))}</span></div>`
+      : '';
+    return `<span class="dse-tip${align}" tabindex="0" role="note" aria-label="${esc(legend.aria || legend.title || '')}">${inner}`
+      + `<span class="dse-pop" role="tooltip"><span class="dse-pop-title">${esc(legend.title || '')}</span>${desc}${formula}${terms}${total}</span></span>`;
+  }
+
   // ── Engine-mode "manual override" control pair (ARCH-3). Type a value to beat
   //    the computed one; ↺ clears back to auto; a faint line flags divergence. ──
   function overrideControls(cid, field, label, numeric, autoVal, isOver) {
-    const input = `<input type="number" inputmode="numeric" class="edit-input"
-        style="width:4rem;text-align:center;padding:var(--space-1)"
-        title="${esc(t('override.edit'))}" aria-label="${esc(label)}"
-        value="${isOver ? esc(String(num(numeric))) : ''}" placeholder="${esc(String(num(autoVal)))}"
-        ${host.h.dataOn('change', host.action('setOverrideValue'), cid, field, '$value')}>`;
+    const input = numField(
+      host.h.dataOn('change', host.action('setOverrideValue'), cid, field, '$value'),
+      isOver ? num(numeric) : '',
+      { title: t('override.edit'), ariaLabel: label, placeholder: num(autoVal), width: '3rem' });
     const clrBtn = isOver
       ? `<button class="inline-create-btn" title="${esc(t('override.auto'))}"${host.h.dataAction(host.action('clearOverride'), cid, field)}>↺</button>`
       : '';
@@ -215,9 +298,9 @@ export function makeUI(ctx) {
   }
 
   return {
-    S, section, card, sectionLabel, subLabel,
+    S, styleTag, section, card, sectionLabel, subLabel,
     heroTile, abilityTile, profDot, profRow, rowLine, overrideControls,
-    statBox, miniStat,
+    numField, statTip, statBox, miniStat,
     selectBox, fieldRow, choiceBlock, spellChip, warningsBlock, attacksBlock,
   };
 }

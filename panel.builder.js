@@ -11,7 +11,7 @@
 export function makeBuilderPanel(ctx) {
   const { host, t, ABILITIES, SKILLS, num, signed, abilityMod, titleize, ui, engine: E } = ctx;
   const { esc, dataAction, dataOn } = host.h;
-  const { section, miniStat, selectBox, fieldRow, choiceBlock, warningsBlock } = ui;
+  const { section, miniStat, selectBox, fieldRow, choiceBlock, warningsBlock, numField } = ui;
   const { builderModel, collectChoices } = E;
 
   // Feature-detect every engine list-method: `(engine.fn ? engine.fn(args) : [])
@@ -60,7 +60,7 @@ export function makeBuilderPanel(ctx) {
       const bonus = fin - b;
       const input = ro
         ? `<div style="color:var(--text-parchment);font-weight:700;font-size:var(--text-lg)">${esc(String(b))}</div>`
-        : `<input class="edit-input" type="number" min="1" max="30" style="width:3.5rem;text-align:center" value="${esc(String(b))}"${dataOn('change', host.action('builderAbility'), c.id, a, '$value')}>`;
+        : numField(dataOn('change', host.action('builderAbility'), c.id, a, '$value'), b, { min: 1, max: 30, ariaLabel: a });
       return `<div style="text-align:center;background:var(--bg-raised);border-radius:var(--radius);padding:var(--space-2)">
         <div style="font-size:var(--text-xs);color:var(--text-muted)">${esc(a)}</div>
         ${input}
@@ -96,7 +96,7 @@ export function makeBuilderPanel(ctx) {
       const showSub = rec && num(cl.level, 1) >= subLevel;
       const levelCtl = ro
         ? `<span style="color:var(--text-parchment)">${esc(String(num(cl.level, 1)))}</span>`
-        : `<input class="edit-input" type="number" min="1" max="20" style="width:3.5rem" value="${esc(String(num(cl.level, 1)))}"${dataOn('change', host.action('builderLevelSet'), c.id, idx, '$value')}>`;
+        : numField(dataOn('change', host.action('builderLevelSet'), c.id, idx, '$value'), num(cl.level, 1), { min: 1, max: 20, ariaLabel: t('field.level') });
       const removeBtn = (!ro && classes.length > 1) ? `<button class="inline-create-btn" title="${esc(t('action.remove'))}"${dataAction(host.action('builderRemoveClass'), c.id, idx)}>✕</button>` : '';
       return `<div style="display:flex;flex-wrap:wrap;gap:var(--space-2);align-items:center;padding:var(--space-1) 0;border-bottom:1px solid rgba(var(--gold-muted),.12)">
         <div style="min-width:9rem">${selectBox(cl.classId, classOpts, dataOn('change', host.action('builderClassSet'), c.id, idx, '$value'), t('builder.choose'), ro)}</div>

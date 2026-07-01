@@ -33,6 +33,8 @@ export default {
   'sheet.attacks':    'Attacks',
   'sheet.notes':      'Notes',
   'sheet.summary':    'Level {level} {cls}',
+  'sheet.saveTag':    'Save',
+  'sheet.noSkills':   'No skills tied to this ability.',
 
   // ── Identity fields ──────────────────────────────────────────────
   'field.player':     'Player',
@@ -63,6 +65,14 @@ export default {
   'stat.passivePercAbbr': 'Pass. Perc.',
   'stat.temp':        'Temp',
 
+  // ── HP live-play controls (heal / take damage by any amount at once) ──
+  'hp.amount':        'amt',
+  'hp.amountAria':    'Amount to heal or take as damage',
+  'hp.heal':          'Heal',
+  'hp.damage':        'Dmg',
+  'hp.healBy':        'Heal by the amount entered',
+  'hp.damageBy':      'Take damage equal to the amount entered (Temp HP absorbs first)',
+
   // ── Header / sections ────────────────────────────────────────────
   'header.details':   'Details',
   'header.noClass':   'Unnamed adventurer',
@@ -75,6 +85,8 @@ export default {
   'combat.weaponsHint': 'Equipped & readied weapons.',
   'combat.acSource':  'Armor Class',
   'combat.attunement': 'Attunement',
+  'combat.spellsTitle': 'Spells',
+  'combat.noPrepared': 'No cantrips or prepared spells yet — prepare them in the Spellbook.',
 
   // ── Resource trackers (Rage / Ki / slots / hit dice…) ────────────
   'tracker.title':    'Trackers',
@@ -88,6 +100,7 @@ export default {
   'tracker.reset':    'Reset to full',
   'tracker.rechShort': 'short rest',
   'tracker.rechLong':  'long rest',
+  'tracker.engineEmpty': 'No limited-use resources from this build.',
 
   // ── Rest wizard ──────────────────────────────────────────────────
   'rest.button':      'Rest',
@@ -233,6 +246,88 @@ export default {
   'misc.proficient':  'Proficient',
   'misc.notProficient': 'Not proficient',
   'misc.expertise':   'Expertise',
+
+  // ── Stat legends (UX-7) — the hover cards that explain a number. ──
+  //  `legend.f*` are formulas; the rest are term labels. Kept terse so the card
+  //  stays glanceable.
+  'legend.total':        'Total',
+  'legend.base':         'Base score',
+  'legend.bonuses':      'Bonuses',
+  'legend.score':        'Score',
+  'legend.modifier':     'Modifier',
+  'legend.proficiency':  'Proficiency',
+  'legend.notTrained':   'Not proficient',
+  'legend.untrained':    'Not proficient',
+  'legend.expertise':    'Expertise (2× prof.)',
+  'legend.abilMod':      '{a} modifier',
+  'legend.saveTitle':    '{a} Save',
+  'legend.saveTitleShort': 'Save',
+  'legend.saveDesc':     'Resist an effect (spell, poison, hazard…) that targets your {a}.',
+  'legend.fAbility':     'modifier = ⌊(score − 10) ÷ 2⌋',
+  'legend.fSave':        'ability modifier + proficiency (if trained)',
+  'legend.fSkill':       'ability modifier + proficiency (if trained)',
+  'legend.fSkillExp':    'ability modifier + 2× proficiency (expertise)',
+  'legend.acBase':       'Base — {src}',
+  'legend.shield':       'Shield',
+  'legend.manual':       'Manual override',
+  'legend.unarmored':    'Unarmored (10 + DEX)',
+  'legend.unarmoredDefense': 'Unarmored Defense',
+  'legend.fAc':          'best armor / Unarmored base + shield + bonuses',
+  'legend.fAcSimple':    'as entered on the sheet',
+  'legend.features':     'Features',
+  'legend.fInit':        'DEX modifier (+ features like Alert)',
+  'legend.fPb':          '2 + ⌊(level − 1) ÷ 4⌋',
+  'legend.totalLevel':   'Total level',
+  'legend.fSpeed':       'species base speed (+ bonuses)',
+  'legend.feet':         '{n} ft',
+  'legend.base10':       'Base',
+  'legend.fPassive':     '10 + Perception (noticed without a roll)',
+  'legend.hitDice':      'Hit dice (L1 max, then average)',
+  'legend.conPerLevel':  'CON {mod} × {lvl} levels',
+  'legend.hpBonus':      'Species / feats',
+  'legend.fHp':          'hit die (max at L1, average after) + CON per level + bonuses',
+  'legend.fHpSimple':    'as entered on the sheet',
+  'legend.base8':        'Base',
+  'legend.fSpellDC':     '8 + proficiency + {a} modifier',
+  'legend.fSpellAtk':    'proficiency + {a} modifier',
+
+  // Ability descriptions (what the score governs).
+  'abilityDesc.STR':     'Physical power — melee attacks, Athletics, lifting and breaking.',
+  'abilityDesc.DEX':     'Agility & reflexes — finesse/ranged attacks, AC, Initiative, Stealth.',
+  'abilityDesc.CON':     'Health & stamina — Hit Points and Concentration saves.',
+  'abilityDesc.INT':     'Reason & memory — Arcana, Investigation and lore.',
+  'abilityDesc.WIS':     'Awareness & insight — Perception, Insight and willpower.',
+  'abilityDesc.CHA':     'Force of personality — social skills and many spells.',
+
+  // Skill descriptions.
+  'skillDesc.acrobatics':     'Balance, tumble and keep your footing.',
+  'skillDesc.animalHandling': 'Calm, read or handle animals.',
+  'skillDesc.arcana':         'Recall lore about magic, the planes and arcane symbols.',
+  'skillDesc.athletics':      'Climb, jump, swim and grapple.',
+  'skillDesc.deception':      'Lie and mislead convincingly.',
+  'skillDesc.history':        'Recall past events, people, places and wars.',
+  'skillDesc.insight':        'Read intentions and sense a lie.',
+  'skillDesc.intimidation':   'Sway others through threats and force of will.',
+  'skillDesc.investigation':  'Deduce, search for clues and reason things out.',
+  'skillDesc.medicine':       'Stabilize the dying and diagnose ailments.',
+  'skillDesc.nature':         'Recall lore about terrain, plants, animals and weather.',
+  'skillDesc.perception':     'Notice what is around you — sight, sound and smell.',
+  'skillDesc.performance':    'Delight an audience with music, dance or oratory.',
+  'skillDesc.persuasion':     'Influence others with tact, grace and good faith.',
+  'skillDesc.religion':       'Recall lore about gods, rites and the divine.',
+  'skillDesc.sleightOfHand':  'Pick pockets, palm objects and other manual trickery.',
+  'skillDesc.stealth':        'Move unseen and unheard.',
+  'skillDesc.survival':       'Track, forage, navigate and read the wilds.',
+
+  // Other stat descriptions.
+  'statDesc.ac':         'How hard you are to hit in combat.',
+  'statDesc.init':       'Your place in the turn order when combat starts.',
+  'statDesc.pb':         'Added to attacks, saves and skills you are proficient in.',
+  'statDesc.speed':      'How far you can move on your turn.',
+  'statDesc.passive':    'What you notice without actively searching (no roll).',
+  'statDesc.hp':         'The damage you can take before you start dying.',
+  'statDesc.spellDC':    'The number a target must beat to resist your {a}-based spells.',
+  'statDesc.spellAtk':   'Added to your spell attack rolls to hit a target.',
 
   // ── Settings / help ──────────────────────────────────────────────
   'settings.label':   'Character Sheets',
